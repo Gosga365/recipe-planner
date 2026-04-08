@@ -28,11 +28,16 @@ import {
 } from "lucide-react";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const INGREDIENT_LOCATION_OPTIONS = ["Dairy", "Meat", "Produce", "Seasonings", "Frozens", "Pasta", "Oils", "Aisles"];
-const STORAGE_KEY = "weekly-recipe-planner-data-v10";
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const INGREDIENT_LOCATION_OPTIONS = [
+  "Dairy",
+  "Meat",
+  "Produce",
+  "Seasonings",
+  "Frozens",
+  "Pasta",
+  "Oils",
+  "Aisles",
+];
 
 const starterRecipes = [
   {
@@ -160,9 +165,18 @@ function generatePlan(recipes, mealCount, maxWeeklyTime) {
 }
 
 function normalizeIngredient(item) {
-  if (typeof item === "string") return { text: item, locationTag: "" };
-  const locationTag = INGREDIENT_LOCATION_OPTIONS.includes(item?.locationTag) ? item.locationTag : "";
-  return { text: item?.text || "", locationTag };
+  if (typeof item === "string") {
+    return { text: item, locationTag: "" };
+  }
+
+  const normalizedTag = INGREDIENT_LOCATION_OPTIONS.includes(item?.locationTag)
+    ? item.locationTag
+    : "";
+
+  return {
+    text: item?.text || "",
+    locationTag: normalizedTag,
+  };
 }
 
 function normalizeRecipe(recipe) {
@@ -218,25 +232,37 @@ function RecipeEditorRow({ recipe, onSave, onDelete, rarityLabel }) {
     const currentTags = (draft.ingredients || []).map((item) => normalizeIngredient(item).locationTag);
     setDraft((current) => ({
       ...current,
-      ingredients: value.split("\n").map((line, index) => ({ text: line, locationTag: currentTags[index] || "" })),
+      ingredients: value.split("
+").map((line, index) => ({
+        text: line,
+        locationTag: currentTags[index] || "",
+      })),
     }));
   };
 
   const updateSingleIngredientTag = (index, value) => {
     setDraft((current) => ({
       ...current,
-      ingredients: (current.ingredients || []).map((item, itemIndex) => itemIndex === index ? { ...normalizeIngredient(item), locationTag: value } : normalizeIngredient(item)),
+      ingredients: (current.ingredients || []).map((item, itemIndex) =>
+        itemIndex === index
+          ? { ...normalizeIngredient(item), locationTag: value }
+          : normalizeIngredient(item)
+      ),
     }));
   };
 
   const saveChanges = () => {
     if (!draft.name.trim()) return;
+
     onSave({
       ...draft,
       name: draft.name.trim(),
       rarity: Math.max(1, Math.min(5, Number(draft.rarity) || 1)),
       time: Math.max(1, Number(draft.time) || 1),
-      ingredients: (draft.ingredients || []).map((item) => normalizeIngredient(item)).map((item) => ({ text: item.text.trim(), locationTag: item.locationTag.trim() })).filter((item) => item.text),
+      ingredients: (draft.ingredients || [])
+        .map((item) => normalizeIngredient(item))
+        .map((item) => ({ text: item.text.trim(), locationTag: item.locationTag.trim() }))
+        .filter((item) => item.text),
       steps: (draft.steps || []).map((item) => item.trim()).filter(Boolean),
     });
     setIsEditing(false);
@@ -246,9 +272,18 @@ function RecipeEditorRow({ recipe, onSave, onDelete, rarityLabel }) {
     return (
       <motion.div layout className="rounded-2xl border bg-white p-4">
         <div className="grid gap-3 md:grid-cols-[1.3fr_0.7fr_0.7fr_auto] md:items-end">
-          <div className="space-y-2"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((c) => ({ ...c, name: e.target.value }))} /></div>
-          <div className="space-y-2"><Label>Rarity</Label><Input type="number" min={1} max={5} value={draft.rarity} onChange={(e) => setDraft((c) => ({ ...c, rarity: Math.max(1, Math.min(5, Number(e.target.value) || 1)) }))} /></div>
-          <div className="space-y-2"><Label>Time (min)</Label><Input type="number" min={1} value={draft.time} onChange={(e) => setDraft((c) => ({ ...c, time: Math.max(1, Number(e.target.value) || 1) }))} /></div>
+          <div className="space-y-2">
+            <Label>Name</Label>
+            <Input value={draft.name} onChange={(e) => setDraft((c) => ({ ...c, name: e.target.value }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>Rarity</Label>
+            <Input type="number" min={1} max={5} value={draft.rarity} onChange={(e) => setDraft((c) => ({ ...c, rarity: Math.max(1, Math.min(5, Number(e.target.value) || 1)) }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>Time (min)</Label>
+            <Input type="number" min={1} value={draft.time} onChange={(e) => setDraft((c) => ({ ...c, time: Math.max(1, Number(e.target.value) || 1) }))} />
+          </div>
           <div className="flex gap-2 md:justify-end">
             <Button onClick={saveChanges} className="rounded-xl"><Save className="mr-2 h-4 w-4" />Save</Button>
             <Button variant="outline" onClick={() => setIsEditing(false)} className="rounded-xl"><X className="h-4 w-4" /></Button>
@@ -258,7 +293,8 @@ function RecipeEditorRow({ recipe, onSave, onDelete, rarityLabel }) {
         <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_1fr_1fr]">
           <div className="space-y-2">
             <Label>Ingredients (one per line)</Label>
-            <textarea className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={(draft.ingredients || []).map((item) => normalizeIngredient(item).text).join("\n")} onChange={(e) => updateIngredientField(e.target.value)} />
+            <textarea className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={(draft.ingredients || []).map((item) => normalizeIngredient(item).text).join("
+")} onChange={(e) => updateIngredientField(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Ingredient store location</Label>
@@ -271,7 +307,9 @@ function RecipeEditorRow({ recipe, onSave, onDelete, rarityLabel }) {
                     <div className="truncate text-sm text-slate-700">{ingredient.text}</div>
                     <select className="w-full rounded-xl border bg-white px-3 py-2 text-sm" value={ingredient.locationTag} onChange={(e) => updateSingleIngredientTag(index, e.target.value)}>
                       <option value="">Select location</option>
-                      {INGREDIENT_LOCATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                      {INGREDIENT_LOCATION_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
                     </select>
                   </div>
                 );
@@ -280,7 +318,9 @@ function RecipeEditorRow({ recipe, onSave, onDelete, rarityLabel }) {
           </div>
           <div className="space-y-2">
             <Label>Steps (one per line)</Label>
-            <textarea className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={(draft.steps || []).join("\n")} onChange={(e) => setDraft((c) => ({ ...c, steps: e.target.value.split("\n") }))} />
+            <textarea className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={(draft.steps || []).join("
+")} onChange={(e) => setDraft((c) => ({ ...c, steps: e.target.value.split("
+") }))} />
           </div>
         </div>
       </motion.div>
@@ -445,7 +485,14 @@ export default function WeeklyRecipePlannerApp() {
   const [recipes, setRecipes] = useState(initialState.recipes);
   const [mealCount, setMealCount] = useState(initialState.mealCount);
   const [maxWeeklyTime, setMaxWeeklyTime] = useState(initialState.maxWeeklyTime);
-  const [newRecipe, setNewRecipe] = useState({ name: "", rarity: "", time: "", ingredientsText: "", ingredientTags: [], stepsText: "" });
+  const [newRecipe, setNewRecipe] = useState({
+    name: "",
+    rarity: "",
+    time: "",
+    ingredientsText: "",
+    ingredientTags: [],
+    stepsText: "",
+  });
   const [weeklyPlan, setWeeklyPlan] = useState(initialState.weeklyPlan);
   const [selectedMeal, setSelectedMeal] = useState(null);
   const [draggedMealIndex, setDraggedMealIndex] = useState(null);
@@ -552,15 +599,45 @@ export default function WeeklyRecipePlannerApp() {
 
   const addRecipe = () => {
     if (!newRecipe.name.trim()) return;
+
     const parsedRarity = Math.max(1, Math.min(5, Number(newRecipe.rarity) || 1));
     const parsedTime = Math.max(1, Number(newRecipe.time) || 1);
-    const ingredientLines = newRecipe.ingredientsText.split("\n");
-    const ingredients = ingredientLines.map((item, index) => ({ text: item.trim(), locationTag: (newRecipe.ingredientTags[index] || "").trim() })).filter((item) => item.text);
-    const steps = newRecipe.stepsText.split("\n").map((item) => item.trim()).filter(Boolean);
+    const ingredientLines = newRecipe.ingredientsText.split("
+");
+    const ingredients = ingredientLines
+      .map((item, index) => ({
+        text: item.trim(),
+        locationTag: (newRecipe.ingredientTags[index] || "").trim(),
+      }))
+      .filter((item) => item.text);
+    const steps = newRecipe.stepsText
+      .split("
+")
+      .map((item) => item.trim())
+      .filter(Boolean);
     const newId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
-    setRecipes((current) => [...current, { id: newId, name: newRecipe.name.trim(), rarity: parsedRarity, time: parsedTime, ingredients, steps }]);
+
+    setRecipes((current) => [
+      ...current,
+      {
+        id: newId,
+        name: newRecipe.name.trim(),
+        rarity: parsedRarity,
+        time: parsedTime,
+        ingredients,
+        steps,
+      },
+    ]);
+
     setRecipeServings((current) => ({ ...current, [newId]: 1 }));
-    setNewRecipe({ name: "", rarity: "", time: "", ingredientsText: "", ingredientTags: [], stepsText: "" });
+    setNewRecipe({
+      name: "",
+      rarity: "",
+      time: "",
+      ingredientsText: "",
+      ingredientTags: [],
+      stepsText: "",
+    });
     setActiveTab("recipes");
   };
 
@@ -663,7 +740,148 @@ export default function WeeklyRecipePlannerApp() {
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="order-2 lg:order-1">
             {activeTab === "settings" && <Card className="rounded-3xl border-0 shadow-sm"><CardHeader><CardTitle className="text-lg">Settings</CardTitle></CardHeader><CardContent className="space-y-6"><div className="space-y-3"><div className="flex items-center justify-between"><Label>Meals to cook</Label><Badge variant="secondary" className="rounded-xl px-3 py-1">{mealCount}</Badge></div><Slider value={[mealCount]} min={1} max={7} step={1} onValueChange={(value) => setMealCount(value[0])} /></div><div className="space-y-3"><div className="flex items-center justify-between"><Label>Max weekly cook time</Label><Badge variant="secondary" className="rounded-xl px-3 py-1">{maxWeeklyTime} min</Badge></div><Slider value={[maxWeeklyTime]} min={0} max={600} step={15} onValueChange={(value) => setMaxWeeklyTime(value[0])} /></div><div className="space-y-3 rounded-2xl border p-4"><div className="flex items-center justify-between gap-3"><Label htmlFor="regen-day">Regenerate one day</Label><Button onClick={rerollSingleDay} variant="outline" className="rounded-2xl"><RefreshCw className="mr-2 h-4 w-4" />Regenerate day</Button></div><select id="regen-day" className="w-full rounded-2xl border bg-white px-3 py-2 text-sm" value={regenDayIndex} onChange={(e) => setRegenDayIndex(Number(e.target.value))}>{DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}</select></div></CardContent></Card>}
 
-            {activeTab === "add" && <Card className="rounded-3xl border-0 shadow-sm"><CardHeader><CardTitle className="text-lg">Add recipe</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-4 md:grid-cols-[1.3fr_0.7fr_0.7fr] md:items-end"><div className="space-y-2"><Label htmlFor="recipe-name">Recipe name</Label><Input id="recipe-name" placeholder="e.g. Lentil soup" value={newRecipe.name} onChange={(e) => setNewRecipe((c) => ({ ...c, name: e.target.value }))} /></div><div className="space-y-2"><Label htmlFor="rarity">Rarity (1-5)</Label><Input id="rarity" type="number" min={1} max={5} placeholder="1-5" value={newRecipe.rarity} onChange={(e) => setNewRecipe((c) => ({ ...c, rarity: e.target.value === "" ? "" : Math.max(1, Math.min(5, Number(e.target.value) || 1)) }))} /></div><div className="space-y-2"><Label htmlFor="time">Cook time (min)</Label><Input id="time" type="number" min={1} placeholder="Minutes" value={newRecipe.time} onChange={(e) => setNewRecipe((c) => ({ ...c, time: e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1) }))} /></div></div><div className="grid gap-4 lg:grid-cols-[1.1fr_1fr_1fr]"><div className="space-y-2"><Label htmlFor="ingredients">Ingredients (one per line)</Label><textarea id="ingredients" className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={newRecipe.ingredientsText} onChange={(e) => setNewRecipe((current) => { const ingredientLines = e.target.value.split("\n"); return { ...current, ingredientsText: e.target.value, ingredientTags: ingredientLines.map((_, index) => current.ingredientTags[index] || "") }; })} /></div><div className="space-y-2"><Label>Ingredient store location</Label><div className="min-h-[180px] space-y-2 rounded-2xl border p-3">{newRecipe.ingredientsText.split("\n").map((line, index) => { const ingredientText = line.trim(); if (!ingredientText) return null; return <div key={`new-ingredient-tag-${index}`} className="grid gap-2 md:grid-cols-[1fr_160px] md:items-center"><div className="truncate text-sm text-slate-700">{ingredientText}</div><select className="w-full rounded-xl border bg-white px-3 py-2 text-sm" value={newRecipe.ingredientTags[index] || ""} onChange={(e) => setNewRecipe((current) => ({ ...current, ingredientTags: current.ingredientsText.split("\n").map((_, itemIndex) => itemIndex === index ? e.target.value : current.ingredientTags[itemIndex] || "") }))}><option value="">Select location</option>{INGREDIENT_LOCATION_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>; })}</div></div><div className="space-y-2"><Label htmlFor="steps">Steps (one per line)</Label><textarea id="steps" className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={newRecipe.stepsText} onChange={(e) => setNewRecipe((c) => ({ ...c, stepsText: e.target.value }))} /></div></div><Button onClick={addRecipe} className="rounded-2xl"><Plus className="mr-2 h-4 w-4" />Add</Button></CardContent></Card>}
+            {activeTab === "add" && (
+              <Card className="rounded-3xl border-0 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg">Add recipe</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-[1.3fr_0.7fr_0.7fr] md:items-end">
+                    <div className="space-y-2">
+                      <Label htmlFor="recipe-name">Recipe name</Label>
+                      <Input
+                        id="recipe-name"
+                        placeholder="e.g. Lentil soup"
+                        value={newRecipe.name}
+                        onChange={(e) => setNewRecipe((c) => ({ ...c, name: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="rarity">Rarity (1-5)</Label>
+                      <Input
+                        id="rarity"
+                        type="number"
+                        min={1}
+                        max={5}
+                        placeholder="1-5"
+                        value={newRecipe.rarity}
+                        onChange={(e) =>
+                          setNewRecipe((c) => ({
+                            ...c,
+                            rarity:
+                              e.target.value === ""
+                                ? ""
+                                : Math.max(1, Math.min(5, Number(e.target.value) || 1)),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="time">Cook time (min)</Label>
+                      <Input
+                        id="time"
+                        type="number"
+                        min={1}
+                        placeholder="Minutes"
+                        value={newRecipe.time}
+                        onChange={(e) =>
+                          setNewRecipe((c) => ({
+                            ...c,
+                            time:
+                              e.target.value === ""
+                                ? ""
+                                : Math.max(1, Number(e.target.value) || 1),
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr_1fr]">
+                    <div className="space-y-2">
+                      <Label htmlFor="ingredients">Ingredients (one per line)</Label>
+                      <textarea
+                        id="ingredients"
+                        className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0"
+                        value={newRecipe.ingredientsText}
+                        onChange={(e) =>
+                          setNewRecipe((current) => {
+                            const ingredientLines = e.target.value.split("
+");
+                            return {
+                              ...current,
+                              ingredientsText: e.target.value,
+                              ingredientTags: ingredientLines.map(
+                                (_, index) => current.ingredientTags[index] || ""
+                              ),
+                            };
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Ingredient store location</Label>
+                      <div className="min-h-[180px] space-y-2 rounded-2xl border p-3">
+                        {newRecipe.ingredientsText.split("
+").map((line, index) => {
+                          const ingredientText = line.trim();
+                          if (!ingredientText) return null;
+
+                          return (
+                            <div
+                              key={`new-ingredient-tag-${index}`}
+                              className="grid gap-2 md:grid-cols-[1fr_160px] md:items-center"
+                            >
+                              <div className="truncate text-sm text-slate-700">{ingredientText}</div>
+                              <select
+                                className="w-full rounded-xl border bg-white px-3 py-2 text-sm"
+                                value={newRecipe.ingredientTags[index] || ""}
+                                onChange={(e) =>
+                                  setNewRecipe((current) => ({
+                                    ...current,
+                                    ingredientTags: current.ingredientsText
+                                      .split("
+")
+                                      .map((_, itemIndex) =>
+                                        itemIndex === index
+                                          ? e.target.value
+                                          : current.ingredientTags[itemIndex] || ""
+                                      ),
+                                  }))
+                                }
+                              >
+                                <option value="">Select location</option>
+                                {INGREDIENT_LOCATION_OPTIONS.map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="steps">Steps (one per line)</Label>
+                      <textarea
+                        id="steps"
+                        className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0"
+                        value={newRecipe.stepsText}
+                        onChange={(e) => setNewRecipe((c) => ({ ...c, stepsText: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <Button onClick={addRecipe} className="rounded-2xl">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
 
             {activeTab === "recipes" && <Card className="rounded-3xl border-0 shadow-sm"><CardHeader><CardTitle className="text-lg">Recipe pool</CardTitle></CardHeader><CardContent><div className="grid gap-3">{recipes.length === 0 ? <div className="rounded-2xl border border-dashed p-6 text-sm text-slate-500">No recipes yet. Add your first recipe above.</div> : recipes.map((recipe) => <RecipeEditorRow key={recipe.id} recipe={recipe} onSave={saveRecipe} onDelete={removeRecipe} rarityLabel={rarityLabel} />)}</div></CardContent></Card>}
           </motion.div>
