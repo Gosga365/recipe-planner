@@ -373,7 +373,7 @@ function localFallbackState() {
     mealCount: 5,
     maxWeeklyTime: 240,
     weeklyPlan: toSevenDayPlan(generatePlan(starterRecipes, 5, 240), 5),
-    recipeServings: {}
+    recipeServings: {},
     ingredientChecks: {}
   };
 }
