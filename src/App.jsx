@@ -661,13 +661,18 @@ function GroceryListModal({ items, onClose }) {
             <p className="muted">No scheduled meals yet.</p>
           ) : (
             Object.entries(groupedByTag).map(([tag, texts]) => (
-              <div key={tag}>
-                <h3 className="title-md">{tag}</h3>
-                <ul className="list mt-10">
-                  {texts.map((text, index) => <li key={`${tag}-${index}`}>{text}</li>)}
-                </ul>
-              </div>
-            ))
+  <div
+    key={tag}
+    className={tag === "Already Have" ? "grocery-section-already-have" : ""}
+  >
+    <h3 className="title-md">{tag}</h3>
+    <ul className="list mt-10">
+      {texts.map((text, index) => (
+        <li key={`${tag}-${index}`}>{text}</li>
+      ))}
+    </ul>
+  </div>
+))
           )}
         </div>
       </div>
