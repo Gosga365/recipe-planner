@@ -405,10 +405,48 @@ function loadInitialState() {
   }
 }
 
-function fileToDataUrl(file) {
+function fileToDataUrl(
+  file,
+  { maxWidth = 1400, maxHeight = 1400, quality = 0.82 } = {}
+) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+
+    reader.onload = () => {
+      const img = new Image();
+
+      img.onload = () => {
+        let { width, height } = img;
+        const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Failed to create canvas context"));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
+        const compressed = canvas.toDataURL(
+          outputType,
+          outputType === "image/png" ? undefined : quality
+        );
+
+        resolve(compressed);
+      };
+
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = typeof reader.result === "string" ? reader.result : "";
+    };
+
     reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
