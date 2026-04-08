@@ -223,15 +223,25 @@ function scaleIngredientLine(ingredient, multiplier) {
   return suffix ? `${scaled} ${suffix}` : scaled;
 }
 
-function buildGroceryList(weeklyPlan, recipeServings) {
+function buildGroceryList(weeklyPlan, recipeServings, ingredientChecks = {}, getIngredientCheckKey) {
   const grouped = new Map();
 
-  weeklyPlan.filter(Boolean).forEach((recipe) => {
+  weeklyPlan.filter(Boolean).forEach((recipe, planIndex) => {
     const servings = recipeServings[recipe.id] || 1;
-    (recipe.ingredients || []).forEach((ingredient) => {
+    const day = DAYS[planIndex];
+    const checkKey =
+      typeof getIngredientCheckKey === "function"
+        ? getIngredientCheckKey(recipe, day, servings)
+        : "";
+    const checkedMap = checkKey ? ingredientChecks[checkKey] || {} : {};
+
+    (recipe.ingredients || []).forEach((ingredient, ingredientIndex) => {
       const parsed = parseIngredientParts(ingredient);
-      const key = parsed.normalizedKey || parsed.originalText.toLowerCase();
+      const keyBase = parsed.normalizedKey || parsed.originalText.toLowerCase();
+      const alreadyHave = Boolean(checkedMap[ingredientIndex]);
+      const key = `${alreadyHave ? "already-have" : "need"}::${keyBase}`;
       const existing = grouped.get(key);
+      const effectiveLocationTag = alreadyHave ? "Already Have" : parsed.locationTag;
 
       if (parsed.quantity !== null) {
         const scaledQuantity = parsed.quantity * servings;
@@ -242,7 +252,7 @@ function buildGroceryList(weeklyPlan, recipeServings) {
             quantity: scaledQuantity,
             unit: parsed.unit,
             name: parsed.name,
-            locationTag: parsed.locationTag,
+            locationTag: effectiveLocationTag,
             texts: []
           });
         }
@@ -255,7 +265,7 @@ function buildGroceryList(weeklyPlan, recipeServings) {
             quantity: null,
             unit: "",
             name: "",
-            locationTag: parsed.locationTag,
+            locationTag: effectiveLocationTag,
             texts: [scaledText]
           });
         }
@@ -279,6 +289,9 @@ function buildGroceryList(weeklyPlan, recipeServings) {
       }));
     })
     .sort((a, b) => {
+      if (a.locationTag === "Already Have" && b.locationTag !== "Already Have") return 1;
+      if (a.locationTag !== "Already Have" && b.locationTag === "Already Have") return -1;
+
       const tagCompare = (a.locationTag || "").localeCompare(b.locationTag || "");
       if (tagCompare !== 0) return tagCompare;
       return a.text.localeCompare(b.text);
@@ -973,9 +986,15 @@ export default function App() {
   );
 
   const groceryListItems = useMemo(
-    () => buildGroceryList(weeklyPlan.slice(0, mealCount).filter(Boolean), recipeServings),
-    [weeklyPlan, mealCount, recipeServings]
-  );
+  () =>
+    buildGroceryList(
+      weeklyPlan.slice(0, mealCount),
+      recipeServings,
+      ingredientChecks,
+      getIngredientCheckKey
+    ),
+  [weeklyPlan, mealCount, recipeServings, ingredientChecks]
+);
 
   const getRecipeServings = (recipe) => (recipe?.id ? recipeServings[recipe.id] || 1 : 1);
 
