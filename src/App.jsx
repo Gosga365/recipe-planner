@@ -831,7 +831,7 @@ export default function App() {
         mealCount,
         maxWeeklyTime,
         weeklyPlan: toSevenDayPlan(weeklyPlan, mealCount),
-        recipeServings
+        recipeServings,
         ingredientChecks
       })
     );
