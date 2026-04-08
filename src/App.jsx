@@ -668,8 +668,7 @@ export default function WeeklyRecipePlannerApp() {
 
     const parsedRarity = Math.max(1, Math.min(5, Number(newRecipe.rarity) || 1));
     const parsedTime = Math.max(1, Number(newRecipe.time) || 1);
-    const ingredientLines = newRecipe.ingredientsText.split("
-");
+    const ingredientLines = newRecipe.ingredientsText.split("\\n");
     const ingredients = ingredientLines
       .map((item, index) => ({
         text: item.trim(),
@@ -677,8 +676,7 @@ export default function WeeklyRecipePlannerApp() {
       }))
       .filter((item) => item.text);
     const steps = newRecipe.stepsText
-      .split("
-")
+      .split("\\n")
       .map((item) => item.trim())
       .filter(Boolean);
     const newId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
@@ -872,8 +870,7 @@ export default function WeeklyRecipePlannerApp() {
                         value={newRecipe.ingredientsText}
                         onChange={(e) =>
                           setNewRecipe((current) => {
-                            const ingredientLines = e.target.value.split("
-");
+                            const ingredientLines = e.target.value.split("\\n");
                             return {
                               ...current,
                               ingredientsText: e.target.value,
@@ -889,8 +886,7 @@ export default function WeeklyRecipePlannerApp() {
                     <div className="space-y-2">
                       <Label>Ingredient store location</Label>
                       <div className="min-h-[180px] space-y-2 rounded-2xl border p-3">
-                        {newRecipe.ingredientsText.split("
-").map((line, index) => {
+                        {newRecipe.ingredientsText.split("\\n").map((line, index) => {
                           const ingredientText = line.trim();
                           if (!ingredientText) return null;
 
@@ -907,8 +903,7 @@ export default function WeeklyRecipePlannerApp() {
                                   setNewRecipe((current) => ({
                                     ...current,
                                     ingredientTags: current.ingredientsText
-                                      .split("
-")
+                                      .split("\\n")
                                       .map((_, itemIndex) =>
                                         itemIndex === index
                                           ? e.target.value
