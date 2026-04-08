@@ -48,6 +48,7 @@ const starterRecipes = [
   {
     id: "spaghetti",
     name: "Spaghetti Bolognese",
+    imageUrl: "",
     rarity: 5,
     time: 35,
     ingredients: [
@@ -66,6 +67,7 @@ const starterRecipes = [
   {
     id: "curry",
     name: "Chicken Curry",
+    imageUrl: "",
     rarity: 4,
     time: 40,
     ingredients: [
@@ -126,6 +128,7 @@ function normalizeIngredient(item) {
 function normalizeRecipe(recipe) {
   return {
     ...recipe,
+    imageUrl: recipe?.imageUrl || "",
     ingredients: Array.isArray(recipe.ingredients)
       ? recipe.ingredients.map(normalizeIngredient)
       : [],
@@ -433,6 +436,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete }) {
     onSave({
       ...draft,
       name: draft.name.trim(),
+      imageUrl: (draft.imageUrl || "").trim(),
       rarity: Math.max(1, Math.min(5, Number(draft.rarity) || 1)),
       time: Math.max(1, Number(draft.time) || 1),
       ingredients: (draft.ingredients || [])
@@ -463,6 +467,17 @@ function RecipeEditorRow({ recipe, onSave, onDelete }) {
           <div className="actions-end">
             <button className={buttonClass()} onClick={saveChanges}><Save size={16} /> Save</button>
           </div>
+        </div>
+
+        <div className="mt-16">
+          <LabelBox>Meal image URL</LabelBox>
+          <input
+            className={inputClass()}
+            type="url"
+            value={draft.imageUrl || ""}
+            onChange={(e) => setDraft((c) => ({ ...c, imageUrl: e.target.value }))}
+            placeholder="https://example.com/meal.jpg"
+          />
         </div>
 
         <div className="grid-3 mt-16">
@@ -605,6 +620,10 @@ function MealDetailModal({ recipe, day, onClose, servings, onServingsChange }) {
         </div>
 
         <div className="stack-20 mt-20">
+          {recipe.imageUrl ? (
+            <img className="recipe-image" src={recipe.imageUrl} alt={recipe.name} />
+          ) : null}
+
           <div className="surface">
             <div className="row-between gap-12">
               <div>
@@ -698,6 +717,7 @@ export default function App() {
 
   const [newRecipe, setNewRecipe] = useState({
     name: "",
+    imageUrl: "",
     rarity: "",
     time: "",
     ingredientsText: "",
@@ -907,6 +927,7 @@ export default function App() {
       {
         id: newId,
         name: newRecipe.name.trim(),
+        imageUrl: (newRecipe.imageUrl || "").trim(),
         rarity: parsedRarity,
         time: parsedTime,
         ingredients,
@@ -917,6 +938,7 @@ export default function App() {
     setRecipeServings((current) => ({ ...current, [newId]: 1 }));
     setNewRecipe({
       name: "",
+      imageUrl: "",
       rarity: "",
       time: "",
       ingredientsText: "",
@@ -1170,6 +1192,17 @@ export default function App() {
                       }
                     />
                   </div>
+                </div>
+
+                <div className="mt-16">
+                  <LabelBox>Meal image URL</LabelBox>
+                  <input
+                    className={inputClass()}
+                    type="url"
+                    value={newRecipe.imageUrl}
+                    onChange={(e) => setNewRecipe((c) => ({ ...c, imageUrl: e.target.value }))}
+                    placeholder="https://example.com/meal.jpg"
+                  />
                 </div>
 
                 <div className="grid-3 mt-16">
