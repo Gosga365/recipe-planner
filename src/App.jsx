@@ -656,6 +656,12 @@ function GroceryListModal({ items, onClose }) {
 }
 
 function MealDetailModal({ recipe, day, onClose, servings, onServingsChange }) {
+  const [checkedIngredients, setCheckedIngredients] = useState({});
+
+  useEffect(() => {
+    setCheckedIngredients({});
+  }, [recipe?.id, day, servings]);
+
   if (!recipe) return null;
 
   const scaledIngredients = (recipe.ingredients || []).map((ingredient) =>
@@ -700,10 +706,39 @@ function MealDetailModal({ recipe, day, onClose, servings, onServingsChange }) {
 
           <div>
             <h3 className="title-md">Ingredients</h3>
-            <ul className="list mt-10">
-              {scaledIngredients.map((ingredient, index) => (
-                <li key={`${recipe.id}-ingredient-${index}`}>{ingredient}</li>
-              ))}
+            <ul className="ingredient-checklist mt-10">
+              {scaledIngredients.map((ingredient, index) => {
+                const isChecked = Boolean(checkedIngredients[index]);
+
+                return (
+                  <li
+                    key={`${recipe.id}-ingredient-${index}`}
+                    className="ingredient-checklist-item"
+                  >
+                    <label className="ingredient-checklist-label">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() =>
+                          setCheckedIngredients((current) => ({
+                            ...current,
+                            [index]: !current[index]
+                          }))
+                        }
+                      />
+                      <span
+                        className={
+                          isChecked
+                            ? "ingredient-text ingredient-text-checked"
+                            : "ingredient-text"
+                        }
+                      >
+                        {ingredient}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
             </ul>
           </div>
 
