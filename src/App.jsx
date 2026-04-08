@@ -106,6 +106,7 @@ import {
   LogOut,
   Cloud,
 } from "lucide-react";
+import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const INGREDIENT_LOCATION_OPTIONS = [
@@ -181,6 +182,27 @@ const starterRecipes = [
     ],
   },
 ];
+
+function cardClass(extra = "") {
+-  return `card ${extra}`.trim();
+-}
+-
+-function buttonClass(kind = "primary") {
+-  return kind === "secondary" ? "btn btn-secondary" : "btn btn-primary";
+-}
+-
+-function badgeClass() {
+-  return "badge";
+-}
+-
+-function inputClass() {
+-  return "input";
+-}
+-
+-function textareaClass() {
+-  return "textarea";
+-}
+ 
 
 function weightedPick(pool) {
   const totalWeight = pool.reduce((sum, recipe) => sum + recipe.rarity, 0);
