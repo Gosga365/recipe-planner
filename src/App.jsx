@@ -48,7 +48,7 @@ const starterRecipes = [
   {
     id: "spaghetti",
     name: "Spaghetti Bolognese",
-    imageUrl: "",
+    imageData: "",
     rarity: 5,
     time: 35,
     ingredients: [
@@ -67,7 +67,7 @@ const starterRecipes = [
   {
     id: "curry",
     name: "Chicken Curry",
-    imageUrl: "",
+    imageData: "",
     rarity: 4,
     time: 40,
     ingredients: [
@@ -128,7 +128,7 @@ function normalizeIngredient(item) {
 function normalizeRecipe(recipe) {
   return {
     ...recipe,
-    imageUrl: recipe?.imageUrl || "",
+    imageData: recipe?.imageData || "",
     ingredients: Array.isArray(recipe.ingredients)
       ? recipe.ingredients.map(normalizeIngredient)
       : [],
@@ -284,6 +284,7 @@ function buildGroceryList(weeklyPlan, recipeServings) {
       return a.text.localeCompare(b.text);
     });
 }
+
 function pickSingleRecipe(recipes, excludedIds = [], remainingTime = 0) {
   const validRecipes = recipes.filter((recipe) => {
     const notExcluded = !excludedIds.includes(recipe.id);
@@ -313,6 +314,7 @@ function pickSingleRecipe(recipes, excludedIds = [], remainingTime = 0) {
 
   return weightedPick(validRecipes);
 }
+
 function generatePlan(recipes, mealCount, maxWeeklyTime) {
   const validRecipes = recipes.filter(
     (r) => r.name.trim() && Number(r.rarity) > 0 && Number(r.time) > 0
@@ -403,6 +405,15 @@ function loadInitialState() {
   }
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function RecipeEditorRow({ recipe, onSave, onDelete }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
@@ -420,7 +431,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete }) {
     }));
   };
 
-  const updateIngredientTags = (value) => {
+ const updateIngredientTags = (value) => {
     const currentTexts = (draft.ingredients || []).map((item) => normalizeIngredient(item).text);
     setDraft((current) => ({
       ...current,
@@ -436,7 +447,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete }) {
     onSave({
       ...draft,
       name: draft.name.trim(),
-      imageUrl: (draft.imageUrl || "").trim(),
+      imageData: draft.imageData || "",
       rarity: Math.max(1, Math.min(5, Number(draft.rarity) || 1)),
       time: Math.max(1, Number(draft.time) || 1),
       ingredients: (draft.ingredients || [])
@@ -470,13 +481,19 @@ function RecipeEditorRow({ recipe, onSave, onDelete }) {
         </div>
 
         <div className="mt-16">
-          <LabelBox>Meal image URL</LabelBox>
+          <LabelBox>Meal image</LabelBox>
+          {draft.imageData ? <img className="recipe-image recipe-image-preview" src={draft.imageData} alt={draft.name || "Recipe preview"} /> : null}
           <input
             className={inputClass()}
-            type="url"
-            value={draft.imageUrl || ""}
-            onChange={(e) => setDraft((c) => ({ ...c, imageUrl: e.target.value }))}
-            placeholder="https://example.com/meal.jpg"
+            type="file"
+            accept="image/*"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const imageData = await fileToDataUrl(file);
+              setDraft((c) => ({ ...c, imageData }));
+              e.target.value = "";
+            }}
           />
         </div>
 
@@ -487,37 +504,37 @@ function RecipeEditorRow({ recipe, onSave, onDelete }) {
           </div>
           <div>
             <LabelBox>Store locations</LabelBox>
-<div className="stack-8">
-  {(draft.ingredients || []).map((item, index) => {
-    const ingredient = normalizeIngredient(item);
-    if (!ingredient.text.trim()) return null;
+            <div className="stack-8">
+              {(draft.ingredients || []).map((item, index) => {
+                const ingredient = normalizeIngredient(item);
+                if (!ingredient.text.trim()) return null;
 
-    return (
-      <div key={index} className="row-between gap-8">
-        <div className="muted">{ingredient.text}</div>
-        <select
-          className={inputClass()}
-          value={ingredient.locationTag || ""}
-          onChange={(e) => {
-            setDraft((current) => ({
-              ...current,
-              ingredients: (current.ingredients || []).map((ing, i) =>
-                i === index
-                  ? { ...normalizeIngredient(ing), locationTag: e.target.value }
-                  : normalizeIngredient(ing)
-              )
-            }));
-          }}
-        >
-          <option value="">Select</option>
-          {STORE_LOCATION_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
-      </div>
-    );
-  })}
-</div>
+                return (
+                  <div key={index} className="row-between gap-8">
+                    <div className="muted">{ingredient.text}</div>
+                    <select
+                      className={inputClass()}
+                      value={ingredient.locationTag || ""}
+                      onChange={(e) => {
+                        setDraft((current) => ({
+                          ...current,
+                          ingredients: (current.ingredients || []).map((ing, i) =>
+                            i === index
+                              ? { ...normalizeIngredient(ing), locationTag: e.target.value }
+                              : normalizeIngredient(ing)
+                          )
+                        }));
+                      }}
+                    >
+                      <option value="">Select</option>
+                      {STORE_LOCATION_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <div>
             <LabelBox>Steps</LabelBox>
@@ -620,8 +637,8 @@ function MealDetailModal({ recipe, day, onClose, servings, onServingsChange }) {
         </div>
 
         <div className="stack-20 mt-20">
-          {recipe.imageUrl ? (
-            <img className="recipe-image" src={recipe.imageUrl} alt={recipe.name} />
+          {recipe.imageData ? (
+            <img className="recipe-image" src={recipe.imageData} alt={recipe.name} />
           ) : null}
 
           <div className="surface">
@@ -717,7 +734,7 @@ export default function App() {
 
   const [newRecipe, setNewRecipe] = useState({
     name: "",
-    imageUrl: "",
+    imageData: "",
     rarity: "",
     time: "",
     ingredientsText: "",
@@ -927,7 +944,7 @@ export default function App() {
       {
         id: newId,
         name: newRecipe.name.trim(),
-        imageUrl: (newRecipe.imageUrl || "").trim(),
+        imageData: newRecipe.imageData || "",
         rarity: parsedRarity,
         time: parsedTime,
         ingredients,
@@ -938,7 +955,7 @@ export default function App() {
     setRecipeServings((current) => ({ ...current, [newId]: 1 }));
     setNewRecipe({
       name: "",
-      imageUrl: "",
+      imageData: "",
       rarity: "",
       time: "",
       ingredientsText: "",
@@ -1195,13 +1212,19 @@ export default function App() {
                 </div>
 
                 <div className="mt-16">
-                  <LabelBox>Meal image URL</LabelBox>
+                  <LabelBox>Meal image</LabelBox>
+                  {newRecipe.imageData ? <img className="recipe-image recipe-image-preview" src={newRecipe.imageData} alt={newRecipe.name || "Recipe preview"} /> : null}
                   <input
                     className={inputClass()}
-                    type="url"
-                    value={newRecipe.imageUrl}
-                    onChange={(e) => setNewRecipe((c) => ({ ...c, imageUrl: e.target.value }))}
-                    placeholder="https://example.com/meal.jpg"
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const imageData = await fileToDataUrl(file);
+                      setNewRecipe((c) => ({ ...c, imageData }));
+                      e.target.value = "";
+                    }}
                   />
                 </div>
 
@@ -1216,38 +1239,38 @@ export default function App() {
                   </div>
                   <div>
                     <LabelBox>Store locations</LabelBox>
-<div className="stack-8">
-  {newRecipe.ingredientsText.split("\n").map((line, index) => {
-    const ingredient = line.trim();
-    if (!ingredient) return null;
+                    <div className="stack-8">
+                      {newRecipe.ingredientsText.split("\n").map((line, index) => {
+                        const ingredient = line.trim();
+                        if (!ingredient) return null;
 
-    const tagLines = newRecipe.ingredientTagsText.split("\n");
+                        const tagLines = newRecipe.ingredientTagsText.split("\n");
 
-    return (
-      <div key={index} className="row-between gap-8">
-        <div className="muted">{ingredient}</div>
-        <select
-          className={inputClass()}
-          value={tagLines[index] || ""}
-          onChange={(e) => {
-            const updated = newRecipe.ingredientsText.split("\n").map((_, i) =>
-              i === index ? e.target.value : tagLines[i] || ""
-            );
-            setNewRecipe((c) => ({
-              ...c,
-              ingredientTagsText: updated.join("\n")
-            }));
-          }}
-        >
-          <option value="">Select</option>
-          {STORE_LOCATION_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
-      </div>
-    );
-  })}
-</div>
+                        return (
+                          <div key={index} className="row-between gap-8">
+                            <div className="muted">{ingredient}</div>
+                            <select
+                              className={inputClass()}
+                              value={tagLines[index] || ""}
+                              onChange={(e) => {
+                                const updated = newRecipe.ingredientsText.split("\n").map((_, i) =>
+                                  i === index ? e.target.value : tagLines[i] || ""
+                                );
+                                setNewRecipe((c) => ({
+                                  ...c,
+                                  ingredientTagsText: updated.join("\n")
+                                }));
+                              }}
+                            >
+                              <option value="">Select</option>
+                              {STORE_LOCATION_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div>
                     <LabelBox>Steps</LabelBox>
