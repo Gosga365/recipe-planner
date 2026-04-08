@@ -374,6 +374,7 @@ function localFallbackState() {
     maxWeeklyTime: 240,
     weeklyPlan: toSevenDayPlan(generatePlan(starterRecipes, 5, 240), 5),
     recipeServings: {}
+    ingredientChecks: {}
   };
 }
 
@@ -398,6 +399,12 @@ function loadInitialState() {
       parsed.recipeServings && typeof parsed.recipeServings === "object"
         ? parsed.recipeServings
         : {};
+    const ingredientChecks =
+      parsed.ingredientChecks && typeof parsed.ingredientChecks === "object"
+        ? parsed.ingredientChecks
+        : {};
+
+return { recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks };
 
     return { recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings };
   } catch {
@@ -655,13 +662,15 @@ function GroceryListModal({ items, onClose }) {
   );
 }
 
-function MealDetailModal({ recipe, day, onClose, servings, onServingsChange }) {
-  const [checkedIngredients, setCheckedIngredients] = useState({});
-
-  useEffect(() => {
-    setCheckedIngredients({});
-  }, [recipe?.id, day, servings]);
-
+function MealDetailModal({
+  recipe,
+  day,
+  onClose,
+  servings,
+  onServingsChange,
+  checkedIngredients,
+  onToggleIngredient
+}) {
   if (!recipe) return null;
 
   const scaledIngredients = (recipe.ingredients || []).map((ingredient) =>
@@ -708,7 +717,7 @@ function MealDetailModal({ recipe, day, onClose, servings, onServingsChange }) {
             <h3 className="title-md">Ingredients</h3>
             <ul className="ingredient-checklist mt-10">
               {scaledIngredients.map((ingredient, index) => {
-                const isChecked = Boolean(checkedIngredients[index]);
+                const isChecked = Boolean(checkedIngredients?.[index]);
 
                 return (
                   <li
@@ -719,12 +728,7 @@ function MealDetailModal({ recipe, day, onClose, servings, onServingsChange }) {
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() =>
-                          setCheckedIngredients((current) => ({
-                            ...current,
-                            [index]: !current[index]
-                          }))
-                        }
+                        onChange={() => onToggleIngredient(index)}
                       />
                       <span
                         className={
@@ -805,6 +809,10 @@ export default function App() {
   const [regenDayIndex, setRegenDayIndex] = useState(0);
   const [user, setUser] = useState(null);
 
+  const [ingredientChecks, setIngredientChecks] = useState(
+  initialState.ingredientChecks || {}
+);
+
   const [newRecipe, setNewRecipe] = useState({
     name: "",
     imageData: "",
@@ -824,9 +832,10 @@ export default function App() {
         maxWeeklyTime,
         weeklyPlan: toSevenDayPlan(weeklyPlan, mealCount),
         recipeServings
+        ingredientChecks
       })
     );
-  }, [recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings]);
+  }, [recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -969,6 +978,29 @@ export default function App() {
   );
 
   const getRecipeServings = (recipe) => (recipe?.id ? recipeServings[recipe.id] || 1 : 1);
+
+  const getIngredientCheckKey = (recipe, day, servings) => {
+  if (!recipe?.id || !day) return "";
+  return `${recipe.id}__${day}__${servings}`;
+};
+
+const getCheckedIngredients = (recipe, day, servings) => {
+  const key = getIngredientCheckKey(recipe, day, servings);
+  return key ? ingredientChecks[key] || {} : {};
+};
+
+const toggleIngredientChecked = (recipe, day, servings, index) => {
+  const key = getIngredientCheckKey(recipe, day, servings);
+  if (!key) return;
+
+  setIngredientChecks((current) => ({
+    ...current,
+    [key]: {
+      ...(current[key] || {}),
+      [index]: !(current[key] || {})[index]
+    }
+  }));
+};
 
   const updateRecipeServings = (recipeId, nextServings) => {
     setRecipeServings((current) => ({
@@ -1471,15 +1503,29 @@ export default function App() {
       </div>
 
       <MealDetailModal
-        recipe={selectedMeal?.recipe}
-        day={selectedMeal?.day}
-        onClose={() => setSelectedMeal(null)}
-        servings={getRecipeServings(selectedMeal?.recipe)}
-        onServingsChange={(value) => {
-          if (!selectedMeal?.recipe?.id) return;
-          updateRecipeServings(selectedMeal.recipe.id, value);
-        }}
-      />
+  recipe={selectedMeal?.recipe}
+  day={selectedMeal?.day}
+  onClose={() => setSelectedMeal(null)}
+  servings={getRecipeServings(selectedMeal?.recipe)}
+  checkedIngredients={getCheckedIngredients(
+    selectedMeal?.recipe,
+    selectedMeal?.day,
+    getRecipeServings(selectedMeal?.recipe)
+  )}
+  onToggleIngredient={(index) => {
+    if (!selectedMeal?.recipe?.id || !selectedMeal?.day) return;
+    toggleIngredientChecked(
+      selectedMeal.recipe,
+      selectedMeal.day,
+      getRecipeServings(selectedMeal.recipe),
+      index
+    );
+  }}
+  onServingsChange={(value) => {
+    if (!selectedMeal?.recipe?.id) return;
+    updateRecipeServings(selectedMeal.recipe.id, value);
+  }}
+/>
 
       <GroceryListModal
         items={showGroceryList ? groceryListItems : null}
