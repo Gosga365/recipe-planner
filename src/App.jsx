@@ -386,9 +386,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete, rarityLabel }) {
           </div>
           <div className="space-y-2">
             <Label>Steps (one per line)</Label>
-            <textarea className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={(draft.steps || []).join("
-")} onChange={(e) => setDraft((c) => ({ ...c, steps: e.target.value.split("
-") }))} />
+            <textarea className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={(draft.steps || []).join("\\n")} onChange={(e) => setDraft((c) => ({ ...c, steps: e.target.value.split("\\n") }))} />
           </div>
         </div>
       </motion.div>
