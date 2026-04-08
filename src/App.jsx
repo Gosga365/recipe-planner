@@ -270,7 +270,35 @@ function buildGroceryList(weeklyPlan, recipeServings) {
       return a.text.localeCompare(b.text);
     });
 }
+function pickSingleRecipe(recipes, excludedIds = [], remainingTime = 0) {
+  const validRecipes = recipes.filter((recipe) => {
+    const notExcluded = !excludedIds.includes(recipe.id);
+    const validTime = remainingTime <= 0 || recipe.time <= remainingTime;
 
+    return (
+      recipe.name.trim() &&
+      Number(recipe.rarity) > 0 &&
+      Number(recipe.time) > 0 &&
+      notExcluded &&
+      validTime
+    );
+  });
+
+  if (validRecipes.length === 0) {
+    const fallbackRecipes = recipes.filter(
+      (recipe) =>
+        recipe.name.trim() &&
+        Number(recipe.rarity) > 0 &&
+        Number(recipe.time) > 0 &&
+        !excludedIds.includes(recipe.id)
+    );
+
+    if (fallbackRecipes.length === 0) return null;
+    return weightedPick(fallbackRecipes);
+  }
+
+  return weightedPick(validRecipes);
+}
 function generatePlan(recipes, mealCount, maxWeeklyTime) {
   const validRecipes = recipes.filter(
     (r) => r.name.trim() && Number(r.rarity) > 0 && Number(r.time) > 0
