@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const STORAGE_KEY = "weekly-recipe-planner-data";
 
 const supabase =
   SUPABASE_URL && SUPABASE_ANON_KEY
