@@ -990,17 +990,6 @@ export default function App() {
     [weeklyPlan, mealCount]
   );
 
-  const groceryListItems = useMemo(
-  () =>
-    buildGroceryList(
-      weeklyPlan.slice(0, mealCount),
-      recipeServings,
-      ingredientChecks,
-      getIngredientCheckKey
-    ),
-  [weeklyPlan, mealCount, recipeServings, ingredientChecks]
-);
-
   const getRecipeServings = (recipe) => (recipe?.id ? recipeServings[recipe.id] || 1 : 1);
 
   const getIngredientCheckKey = (recipe, day, servings) => {
@@ -1025,6 +1014,19 @@ const toggleIngredientChecked = (recipe, day, servings, index) => {
     }
   }));
 };
+  
+  const groceryListItems = useMemo(
+  () =>
+    buildGroceryList(
+      weeklyPlan.slice(0, mealCount),
+      recipeServings,
+      ingredientChecks,
+      getIngredientCheckKey
+    ),
+  [weeklyPlan, mealCount, recipeServings, ingredientChecks]
+);
+
+  
 
   const updateRecipeServings = (recipeId, nextServings) => {
     setRecipeServings((current) => ({
