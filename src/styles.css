@@ -426,3 +426,31 @@ select {
 input[type="file"] {
   margin-top: 8px;
 }
+
+/* Ingredient checklist details */
+
+.ingredient-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ingredient-checklist-item + .ingredient-checklist-item {
+  margin-top: 10px;
+}
+
+.ingredient-checklist-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.ingredient-text {
+  transition: opacity 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.ingredient-text-checked {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
