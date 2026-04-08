@@ -31,6 +31,17 @@ const DAYS = [
   "Sunday",
 ];
 
+const STORE_LOCATION_OPTIONS = [
+  "Dairy",
+  "Meat",
+  "Produce",
+  "Seasonings",
+  "Frozens",
+  "Pasta",
+  "Oils",
+  "Aisles"
+];
+
 const STORAGE_KEY = "recipe-planner-starter-v1";
 
 const starterRecipes = [
@@ -461,7 +472,37 @@ function RecipeEditorRow({ recipe, onSave, onDelete }) {
           </div>
           <div>
             <LabelBox>Store locations</LabelBox>
-            <textarea className={textareaClass()} value={(draft.ingredients || []).map((item) => normalizeIngredient(item).locationTag).join("\n")} onChange={(e) => updateIngredientTags(e.target.value)} />
+<div className="stack-8">
+  {(draft.ingredients || []).map((item, index) => {
+    const ingredient = normalizeIngredient(item);
+    if (!ingredient.text.trim()) return null;
+
+    return (
+      <div key={index} className="row-between gap-8">
+        <div className="muted">{ingredient.text}</div>
+        <select
+          className={inputClass()}
+          value={ingredient.locationTag || ""}
+          onChange={(e) => {
+            setDraft((current) => ({
+              ...current,
+              ingredients: (current.ingredients || []).map((ing, i) =>
+                i === index
+                  ? { ...normalizeIngredient(ing), locationTag: e.target.value }
+                  : normalizeIngredient(ing)
+              )
+            }));
+          }}
+        >
+          <option value="">Select</option>
+          {STORE_LOCATION_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </div>
+    );
+  })}
+</div>
           </div>
           <div>
             <LabelBox>Steps</LabelBox>
@@ -1142,11 +1183,38 @@ export default function App() {
                   </div>
                   <div>
                     <LabelBox>Store locations</LabelBox>
-                    <textarea
-                      className={textareaClass()}
-                      value={newRecipe.ingredientTagsText}
-                      onChange={(e) => setNewRecipe((c) => ({ ...c, ingredientTagsText: e.target.value }))}
-                    />
+<div className="stack-8">
+  {newRecipe.ingredientsText.split("\n").map((line, index) => {
+    const ingredient = line.trim();
+    if (!ingredient) return null;
+
+    const tagLines = newRecipe.ingredientTagsText.split("\n");
+
+    return (
+      <div key={index} className="row-between gap-8">
+        <div className="muted">{ingredient}</div>
+        <select
+          className={inputClass()}
+          value={tagLines[index] || ""}
+          onChange={(e) => {
+            const updated = newRecipe.ingredientsText.split("\n").map((_, i) =>
+              i === index ? e.target.value : tagLines[i] || ""
+            );
+            setNewRecipe((c) => ({
+              ...c,
+              ingredientTagsText: updated.join("\n")
+            }));
+          }}
+        >
+          <option value="">Select</option>
+          {STORE_LOCATION_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </div>
+    );
+  })}
+</div>
                   </div>
                   <div>
                     <LabelBox>Steps</LabelBox>
