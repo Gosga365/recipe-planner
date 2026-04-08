@@ -454,3 +454,14 @@ input[type="file"] {
   text-decoration: line-through;
   opacity: 0.6;
 }
+
+/* Already have section of grocery list grey out  */
+
+.grocery-section-already-have {
+  opacity: 0.55;
+}
+
+.grocery-section-already-have h3,
+.grocery-section-already-have li {
+  color: #64748b;
+}
