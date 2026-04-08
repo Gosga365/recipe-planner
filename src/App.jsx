@@ -1,12 +1,82 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { createClient } from "@supabase/supabase-js";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Badge } from "@/components/ui/badge";
+function Card({ className = "", children }) {
+  return <div className={className}>{children}</div>;
+}
+
+function CardHeader({ className = "", children }) {
+  return <div className={className}>{children}</div>;
+}
+
+function CardContent({ className = "", children }) {
+  return <div className={className}>{children}</div>;
+}
+
+function CardTitle({ className = "", children }) {
+  return <h2 className={className}>{children}</h2>;
+}
+
+function Button({ className = "", variant = "default", size = "default", children, ...props }) {
+  const variantClass = variant === "outline"
+    ? "border border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+    : variant === "ghost"
+      ? "bg-transparent text-slate-700 hover:bg-slate-100"
+      : "bg-slate-900 text-white hover:bg-slate-800";
+  const sizeClass = size === "icon" ? "h-10 w-10 p-0" : "px-4 py-2";
+  return (
+    <button
+      className={`${variantClass} ${sizeClass} inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium transition ${className}`.trim()}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Input({ className = "", ...props }) {
+  return (
+    <input
+      className={`w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0 ${className}`.trim()}
+      {...props}
+    />
+  );
+}
+
+function Label({ className = "", children, ...props }) {
+  return (
+    <label className={`text-sm font-medium text-slate-900 ${className}`.trim()} {...props}>
+      {children}
+    </label>
+  );
+}
+
+function Slider({ value = [0], min = 0, max = 100, step = 1, onValueChange, className = "" }) {
+  return (
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value[0]}
+      onChange={(e) => onValueChange?.([Number(e.target.value)])}
+      className={`h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 ${className}`.trim()}
+    />
+  );
+}
+
+function Badge({ className = "", variant = "default", children }) {
+  const variantClass = variant === "secondary"
+    ? "bg-slate-100 text-slate-700"
+    : variant === "outline"
+      ? "border border-slate-300 bg-white text-slate-700"
+      : "bg-slate-900 text-white";
+  return (
+    <span className={`${variantClass} inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${className}`.trim()}>
+      {children}
+    </span>
+  );
+}
 import {
   Trash2,
   Plus,
