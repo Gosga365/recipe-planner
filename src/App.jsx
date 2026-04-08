@@ -302,8 +302,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete, rarityLabel }) {
     const currentTags = (draft.ingredients || []).map((item) => normalizeIngredient(item).locationTag);
     setDraft((current) => ({
       ...current,
-      ingredients: value.split("
-").map((line, index) => ({
+      ingredients: value.split("\\n").map((line, index) => ({
         text: line,
         locationTag: currentTags[index] || "",
       })),
@@ -363,8 +362,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete, rarityLabel }) {
         <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_1fr_1fr]">
           <div className="space-y-2">
             <Label>Ingredients (one per line)</Label>
-            <textarea className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={(draft.ingredients || []).map((item) => normalizeIngredient(item).text).join("
-")} onChange={(e) => updateIngredientField(e.target.value)} />
+            <textarea className="min-h-[180px] w-full rounded-2xl border bg-white px-3 py-2 text-sm outline-none ring-0" value={(draft.ingredients || []).map((item) => normalizeIngredient(item).text).join("\\n")} onChange={(e) => updateIngredientField(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Ingredient store location</Label>
