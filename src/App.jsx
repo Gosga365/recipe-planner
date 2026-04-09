@@ -1011,6 +1011,10 @@ export default function App() {
     stepsText: ""
   });
 
+
+const [recipeImportSummary, setRecipeImportSummary] = useState("");
+
+
 const [selectedExportRecipeIds, setSelectedExportRecipeIds] = useState({});
 
   const [importUrl, setImportUrl] = useState("");
@@ -1374,16 +1378,74 @@ const importRecipesFromFile = async (file) => {
     throw new Error("No recipes found in that file.");
   }
 
-  const normalizedImported = importedRecipes.map((recipe) => {
-    const normalized = normalizeRecipe(recipe);
-    return {
-      ...normalized,
+  const normalizeIngredientText = (ingredient) => {
+    const text =
+      typeof ingredient === "string"
+        ? ingredient
+        : ingredient?.text || "";
+
+    return text.trim().toLowerCase().replace(/\s+/g, " ");
+  };
+
+  const buildDuplicateKey = (recipe) => {
+    const normalizedName = (recipe.name || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+    const normalizedIngredients = (recipe.ingredients || [])
+      .map((ingredient) => normalizeIngredientText(ingredient))
+      .filter(Boolean)
+      .sort()
+      .join("||");
+
+    return `${normalizedName}__${normalizedIngredients}`;
+  };
+
+  const existingKeys = new Set(
+    recipes
+      .map((recipe) => normalizeRecipe(recipe))
+      .map((recipe) => buildDuplicateKey(recipe))
+      .filter((key) => key !== "__")
+  );
+
+  let skippedCount = 0;
+  let invalidCount = 0;
+
+  const normalizedImported = importedRecipes
+    .map((recipe) => normalizeRecipe(recipe))
+    .filter((recipe) => {
+      const hasName = recipe.name && recipe.name.trim();
+      const hasIngredients = Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0;
+
+      if (!hasName || !hasIngredients) {
+        invalidCount += 1;
+        return false;
+      }
+
+      const key = buildDuplicateKey(recipe);
+      if (existingKeys.has(key)) {
+        skippedCount += 1;
+        return false;
+      }
+
+      existingKeys.add(key);
+      return true;
+    })
+    .map((recipe) => ({
+      ...recipe,
       id:
         typeof crypto !== "undefined" && crypto.randomUUID
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    };
-  });
+    }));
+
+  if (normalizedImported.length === 0) {
+    throw new Error(
+      `No new recipes were imported. ${skippedCount} duplicate${skippedCount === 1 ? "" : "s"} skipped` +
+      `${invalidCount ? `, ${invalidCount} invalid` : ""}.`
+    );
+  }
 
   setRecipes((current) => [...current, ...normalizedImported]);
 
@@ -1394,6 +1456,12 @@ const importRecipesFromFile = async (file) => {
     });
     return next;
   });
+
+  setRecipeImportSummary(
+    `Imported ${normalizedImported.length} recipe${normalizedImported.length === 1 ? "" : "s"}. ` +
+    `Skipped ${skippedCount} duplicate${skippedCount === 1 ? "" : "s"}` +
+    `${invalidCount ? ` and ${invalidCount} invalid entr${invalidCount === 1 ? "y" : "ies"}` : ""}.`
+  );
 };
 
 
@@ -1754,16 +1822,24 @@ const importRecipesFromFile = async (file) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
 
+                        setRecipeImportSummary("");
+
                         try {
                           await importRecipesFromFile(file);
                         } catch (error) {
-                          alert(error instanceof Error ? error.message : "Failed to import recipes.");
+                          setRecipeImportSummary(
+                            error instanceof Error ? error.message : "Failed to import recipes."
+                          );
                         }
 
                         e.target.value = "";
                       }}
                     />
                   </label>
+
+                  {recipeImportSummary ? (
+                      <div className="recipe-import-summary">{recipeImportSummary}</div>
+                    ) : null}
                 </div>
                 <div className="stack-12 mt-16">
                   {recipes.length === 0 ? (
