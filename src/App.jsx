@@ -1135,18 +1135,18 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
 
   const getRecipeServings = (recipe) => (recipe?.id ? recipeServings[recipe.id] || 1 : 1);
 
-  const getIngredientCheckKey = (recipe, day, servings) => {
+  const getIngredientCheckKey = (recipe, day) => {
   if (!recipe?.id || !day) return "";
-  return `${recipe.id}__${day}__${servings}`;
+  return `${recipe.id}__${day}`;
 };
 
-const getCheckedIngredients = (recipe, day, servings) => {
-  const key = getIngredientCheckKey(recipe, day, servings);
+const getCheckedIngredients = (recipe, day) => {
+  const key = getIngredientCheckKey(recipe, day);
   return key ? ingredientChecks[key] || {} : {};
 };
 
-const toggleIngredientChecked = (recipe, day, servings, index) => {
-  const key = getIngredientCheckKey(recipe, day, servings);
+const toggleIngredientChecked = (recipe, day, index) => {
+  const key = getIngredientCheckKey(recipe, day);
   if (!key) return;
 
   setIngredientChecks((current) => ({
@@ -1794,19 +1794,17 @@ const toggleIngredientChecked = (recipe, day, servings, index) => {
   onClose={() => setSelectedMeal(null)}
   servings={getRecipeServings(selectedMeal?.recipe)}
   checkedIngredients={getCheckedIngredients(
-    selectedMeal?.recipe,
-    selectedMeal?.day,
-    getRecipeServings(selectedMeal?.recipe)
-  )}
-  onToggleIngredient={(index) => {
-    if (!selectedMeal?.recipe?.id || !selectedMeal?.day) return;
-    toggleIngredientChecked(
-      selectedMeal.recipe,
-      selectedMeal.day,
-      getRecipeServings(selectedMeal.recipe),
-      index
-    );
-  }}
+  selectedMeal?.recipe,
+  selectedMeal?.day
+)}
+onToggleIngredient={(index) => {
+  if (!selectedMeal?.recipe?.id || !selectedMeal?.day) return;
+  toggleIngredientChecked(
+    selectedMeal.recipe,
+    selectedMeal.day,
+    index
+  );
+}}
   onServingsChange={(value) => {
     if (!selectedMeal?.recipe?.id) return;
     updateRecipeServings(selectedMeal.recipe.id, value);
