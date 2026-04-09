@@ -538,3 +538,11 @@ input[type="file"] {
   height: 16px;
   cursor: pointer;
 }
+
+/* recipe import summary */
+
+.recipe-import-summary {
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 0.95rem;
+}
