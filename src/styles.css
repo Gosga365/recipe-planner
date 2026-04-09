@@ -517,3 +517,24 @@ input[type="file"] {
   transform: rotate(90deg) scale(0.96);
 }
 
+/* Import/export styles  */
+
+.hidden-file-input {
+  display: none;
+}
+
+.file-button-label {
+  cursor: pointer;
+}
+
+.recipe-select-checkbox {
+  display: inline-flex;
+  align-items: flex-start;
+  padding-top: 2px;
+}
+
+.recipe-select-checkbox input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
