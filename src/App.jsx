@@ -144,6 +144,14 @@ function toSevenDayPlan(plan, mealCount) {
   return DAYS.map((_, index) => (index < mealCount ? normalized[index] || null : null));
 }
 
+function preserveSevenDayPlan(plan) {
+  const normalized = Array.isArray(plan)
+    ? plan.map((item) => (item ? normalizeRecipe(item) : null))
+    : [];
+
+  return DAYS.map((_, index) => normalized[index] || null);
+}
+
 function parseAmountToken(token) {
   if (!token) return null;
   if (token.includes("/")) {
@@ -407,7 +415,7 @@ function loadInitialState() {
     const mealCount = Number(parsed.mealCount) || 5;
     const maxWeeklyTime = Number.isFinite(parsed.maxWeeklyTime) ? parsed.maxWeeklyTime : 240;
     const weeklyPlan = Array.isArray(parsed.weeklyPlan)
-      ? toSevenDayPlan(parsed.weeklyPlan, mealCount)
+      ? preserveSevenDayPlan(parsed.weeklyPlan)
       : toSevenDayPlan(generatePlan(recipes, mealCount, maxWeeklyTime), mealCount);
     const recipeServings =
       parsed.recipeServings && typeof parsed.recipeServings === "object"
@@ -1028,7 +1036,7 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
         recipes,
         mealCount,
         maxWeeklyTime,
-        weeklyPlan: toSevenDayPlan(weeklyPlan, mealCount),
+        weeklyPlan: preserveSevenDayPlan(weeklyPlan),
         recipeServings,
         ingredientChecks
       })
@@ -1091,7 +1099,7 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
         setRecipes(nextRecipes);
         setMealCount(nextMealCount);
         setMaxWeeklyTime(nextMaxWeeklyTime);
-        setWeeklyPlan(toSevenDayPlan(data.weekly_plan || [], nextMealCount));
+        setWeeklyPlan(preserveSevenDayPlan(data.weekly_plan || []));
         setRecipeServings(
           data.recipe_servings && typeof data.recipe_servings === "object"
             ? data.recipe_servings
@@ -1117,7 +1125,7 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
           recipes,
           meal_count: mealCount,
           max_weekly_time: maxWeeklyTime,
-          weekly_plan: toSevenDayPlan(weeklyPlan, mealCount),
+          weekly_plan: preserveSevenDayPlan(weeklyPlan),
           recipe_servings: recipeServings,
           ingredient_checks: ingredientChecks,
           updated_at: new Date().toISOString()
