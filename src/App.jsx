@@ -5,6 +5,7 @@ import {
   Clock3,
   Cloud,
   GripVertical,
+  Link2,
   ListChecks,
   LogIn,
   LogOut,
@@ -472,6 +473,160 @@ function fileToDataUrl(
   });
 }
 
+function firstText(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = firstText(item);
+      if (found) return found;
+    }
+    return "";
+  }
+  if (typeof value === "object") {
+    return firstText(
+      value.text ||
+      value.name ||
+      value["@value"] ||
+      value.caption ||
+      value.description ||
+      value.url
+    );
+  }
+  return "";
+}
+
+function normalizeInstructionStep(step) {
+  if (!step) return "";
+  if (typeof step === "string") return step.trim();
+  if (Array.isArray(step)) {
+    return step.map(normalizeInstructionStep).filter(Boolean).join(" ").trim();
+  }
+  if (typeof step === "object") {
+    if (step["@type"] === "HowToSection" && Array.isArray(step.itemListElement)) {
+      return step.itemListElement.map(normalizeInstructionStep).filter(Boolean).join(" ").trim();
+    }
+    return firstText(step.text || step.name || step.itemListElement || step.description);
+  }
+  return "";
+}
+
+function normalizeRecipeImage(image) {
+  if (!image) return "";
+  if (typeof image === "string") return image;
+  if (Array.isArray(image)) return normalizeRecipeImage(image[0]);
+  if (typeof image === "object") return firstText(image.url || image.contentUrl || image.thumbnailUrl);
+  return "";
+}
+
+function collectRecipeCandidates(node) {
+  if (!node) return [];
+  if (Array.isArray(node)) return node.flatMap(collectRecipeCandidates);
+  if (typeof node !== "object") return [];
+
+  const typeValue = node["@type"];
+  const types = Array.isArray(typeValue) ? typeValue : [typeValue];
+  let results = [];
+
+  if (types.filter(Boolean).includes("Recipe")) {
+    results.push(node);
+  }
+
+  const nestedKeys = ["@graph", "itemListElement", "mainEntity", "mainEntityOfPage", "hasPart"];
+  nestedKeys.forEach((key) => {
+    if (node[key]) results = results.concat(collectRecipeCandidates(node[key]));
+  });
+
+  return results;
+}
+
+function parseRecipeFromHtml(html, sourceUrl = "") {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const scripts = Array.from(doc.querySelectorAll('script[type="application/ld+json"]'));
+
+  const candidates = [];
+  scripts.forEach((script) => {
+    try {
+      const parsed = JSON.parse(script.textContent || "null");
+      candidates.push(...collectRecipeCandidates(parsed));
+    } catch {
+      // ignore bad JSON-LD
+    }
+  });
+
+  let recipeData = candidates.find((candidate) => firstText(candidate.name));
+
+  if (!recipeData) {
+    const ingredientNodes = Array.from(doc.querySelectorAll('[itemprop="recipeIngredient"]'));
+    const instructionNodes = Array.from(
+      doc.querySelectorAll(
+        '[itemprop="recipeInstructions"] li, [itemprop="recipeInstructions"] p, .wprm-recipe-instruction-text, .instruction, .directions li'
+      )
+    );
+    const title =
+      doc.querySelector('meta[property="og:title"]')?.getAttribute("content") ||
+      doc.title ||
+      "";
+
+    if (ingredientNodes.length > 0 || instructionNodes.length > 0) {
+      recipeData = {
+        name: title,
+        image: doc.querySelector('meta[property="og:image"]')?.getAttribute("content") || "",
+        recipeIngredient: ingredientNodes.map((node) => node.textContent?.trim()).filter(Boolean),
+        recipeInstructions: instructionNodes.map((node) => node.textContent?.trim()).filter(Boolean),
+      };
+    }
+  }
+
+  if (!recipeData) {
+    throw new Error("Could not find a recipe on that page.");
+  }
+
+  const name = firstText(recipeData.name) || "Imported Recipe";
+  const imageUrl = normalizeRecipeImage(recipeData.image);
+  const ingredients = (Array.isArray(recipeData.recipeIngredient) ? recipeData.recipeIngredient : [])
+    .map((item) => firstText(item))
+    .filter(Boolean)
+    .map((text) => ({ text, locationTag: "" }));
+  const steps = (Array.isArray(recipeData.recipeInstructions) ? recipeData.recipeInstructions : [recipeData.recipeInstructions])
+    .map(normalizeInstructionStep)
+    .filter(Boolean);
+  const totalTimeText = firstText(recipeData.totalTime || recipeData.cookTime || recipeData.prepTime);
+  const timeMatch = totalTimeText.match(/(\d+)/);
+  const time = timeMatch ? Math.max(1, Number(timeMatch[1])) : "";
+
+  return {
+    name,
+    imageUrl,
+    time,
+    ingredients,
+    steps,
+    sourceUrl,
+  };
+}
+
+async function fetchRecipeHtml(url) {
+  const targets = [
+    url,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  ];
+
+  for (const target of targets) {
+    try {
+      const response = await fetch(target);
+      if (!response.ok) continue;
+      const text = await response.text();
+      if (text && text.length > 200) return text;
+    } catch {
+      // try next
+    }
+  }
+
+  throw new Error("Unable to fetch that recipe URL. Some recipe sites block browser imports.");
+}
+
 function RecipeEditorRow({ recipe, onSave, onDelete }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
@@ -841,6 +996,10 @@ export default function App() {
     stepsText: ""
   });
 
+  const [importUrl, setImportUrl] = useState("");
+const [importStatus, setImportStatus] = useState("");
+const [isImportingRecipe, setIsImportingRecipe] = useState(false);
+
   useEffect(() => {
     window.localStorage.setItem(
       STORAGE_KEY,
@@ -1044,6 +1203,53 @@ const toggleIngredientChecked = (recipe, day, servings, index) => {
     if (!supabase) return;
     await supabase.auth.signOut();
   };
+
+  const importRecipeFromUrl = async () => {
+  const trimmedUrl = importUrl.trim();
+  if (!trimmedUrl) {
+    setImportStatus("Paste a recipe URL first.");
+    return;
+  }
+
+  setIsImportingRecipe(true);
+  setImportStatus("Importing recipe...");
+
+  try {
+    const html = await fetchRecipeHtml(trimmedUrl);
+    const imported = parseRecipeFromHtml(html, trimmedUrl);
+    let imageData = newRecipe.imageData;
+
+    if (imported.imageUrl) {
+      try {
+        const response = await fetch(imported.imageUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          const filename = imported.imageUrl.split("/").pop() || "recipe-image";
+          const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
+          imageData = await fileToDataUrl(file);
+        }
+      } catch {
+        imageData = "";
+      }
+    }
+
+    setNewRecipe((current) => ({
+      ...current,
+      name: imported.name || current.name,
+      imageData,
+      time: imported.time ? String(imported.time) : current.time,
+      ingredientsText: imported.ingredients.map((item) => item.text).join("\n"),
+      ingredientTagsText: imported.ingredients.map(() => "").join("\n"),
+      stepsText: imported.steps.join("\n"),
+    }));
+
+    setImportStatus("Recipe imported. Review and save it when ready.");
+  } catch (error) {
+    setImportStatus(error instanceof Error ? error.message : "Failed to import recipe.");
+  } finally {
+    setIsImportingRecipe(false);
+  }
+};
 
   const addRecipe = () => {
     if (!newRecipe.name.trim()) return;
@@ -1341,6 +1547,33 @@ const toggleIngredientChecked = (recipe, day, servings, index) => {
                     />
                   </div>
                 </div>
+
+                <div className={`import-status ${importStatus.includes("failed") ? "error" : "success"}`}>
+                  {importStatus}
+                </div>
+
+
+                <div className="mt-16">
+                  <LabelBox>Import from recipe URL</LabelBox>
+                  <div className="row wrap gap-8">
+                    <input
+                      className={inputClass()}
+                      type="url"
+                      value={importUrl}
+                      onChange={(e) => setImportUrl(e.target.value)}
+                      placeholder="https://example.com/recipe"
+                    />
+                    <button
+                      className={buttonClass("secondary")}
+                      onClick={importRecipeFromUrl}
+                      disabled={isImportingRecipe}
+                    >
+                      <Link2 size={16} /> {isImportingRecipe ? "Importing..." : "Import URL"}
+                    </button>
+                  </div>
+                  {importStatus ? <div className="muted mt-10">{importStatus}</div> : null}
+                </div>
+
 
                 <div className="mt-16">
                   <LabelBox>Meal image</LabelBox>
