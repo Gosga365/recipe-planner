@@ -491,3 +491,29 @@ input[type="file"] {
   color: #16a34a;
 }
 
+/* Day Reroll button  */
+
+.day-reroll-button {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.day-reroll-button:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  transform: rotate(30deg);
+}
+
+.day-reroll-button:active {
+  transform: rotate(90deg) scale(0.96);
+}
+
