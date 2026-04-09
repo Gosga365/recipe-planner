@@ -420,7 +420,7 @@ function loadInitialState() {
 
 return { recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks };
 
-    return { recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings };
+ 
   } catch {
     return localFallbackState();
   }
@@ -1044,7 +1044,7 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
     async function loadCloudData() {
       const { data, error } = await supabase
         .from("user_recipe_plans")
-        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings")
+        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -1055,6 +1055,12 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
           Array.isArray(data.recipes) && data.recipes.length > 0
             ? data.recipes.map(normalizeRecipe)
             : starterRecipes;
+
+        setIngredientChecks(
+          data.ingredient_checks && typeof data.ingredient_checks === "object"
+            ? data.ingredient_checks
+            : {}
+        );
 
         const nextMealCount = Number(data.meal_count) || 5;
         const nextMaxWeeklyTime = Number.isFinite(data.max_weekly_time)
@@ -1092,6 +1098,7 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
           max_weekly_time: maxWeeklyTime,
           weekly_plan: toSevenDayPlan(weeklyPlan, mealCount),
           recipe_servings: recipeServings,
+          ingredient_checks: ingredientChecks,
           updated_at: new Date().toISOString()
         },
         { onConflict: "user_id" }
@@ -1099,45 +1106,22 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
     }, 500);
 
     return () => clearTimeout(timeout);
-  }, [recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, user?.id]);
+  }, [recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks, user?.id]);
 
   useEffect(() => {
-    setWeeklyPlan((current) => {
-      const normalized = toSevenDayPlan(current, mealCount);
-      const filledCount = normalized.filter(Boolean).length;
+  setWeeklyPlan((current) => {
+    const currentPlan = Array.isArray(current)
+      ? DAYS.map((_, i) => current[i] || null)
+      : DAYS.map(() => null);
 
-      if (filledCount >= mealCount) return normalized;
+    return currentPlan.map((recipe) => {
+      if (!recipe) return null;
 
-      const existingIds = normalized.filter(Boolean).map((recipe) => recipe.id);
-      const slotsToFill = mealCount - filledCount;
-      const additions = [];
-      let remainingTime =
-        maxWeeklyTime > 0
-          ? Math.max(0, maxWeeklyTime - normalized.reduce((sum, recipe) => sum + (recipe?.time || 0), 0))
-          : 0;
-
-      for (let i = 0; i < slotsToFill; i += 1) {
-        const pick = pickSingleRecipe(
-          recipes,
-          [...existingIds, ...additions.map((item) => item.id)],
-          remainingTime
-        );
-        if (!pick) break;
-        additions.push(pick);
-        if (maxWeeklyTime > 0) remainingTime = Math.max(0, remainingTime - pick.time);
-      }
-
-      let addIndex = 0;
-      return normalized.map((recipe, index) => {
-        if (index < mealCount && !recipe && additions[addIndex]) {
-          const next = additions[addIndex];
-          addIndex += 1;
-          return next;
-        }
-        return recipe;
-      });
+      const latestRecipe = recipes.find((r) => r.id === recipe.id);
+      return latestRecipe ? latestRecipe : recipe;
     });
-  }, [mealCount, maxWeeklyTime, recipes]);
+  });
+}, [recipes]);
 
   const totalPlanTime = useMemo(
     () => weeklyPlan.reduce((sum, recipe) => sum + (recipe?.time || 0), 0),
