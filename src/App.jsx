@@ -627,7 +627,7 @@ async function fetchRecipeHtml(url) {
   throw new Error("Unable to fetch that recipe URL. Some recipe sites block browser imports.");
 }
 
-function RecipeEditorRow({ recipe, onSave, onDelete }) {
+function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggleSelectedForExport }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
 
@@ -769,7 +769,22 @@ function RecipeEditorRow({ recipe, onSave, onDelete }) {
 
   return (
     <motion.div layout className={`${cardClass()} row-between wrap gap-12`}>
-      <div>
+      <div className="row gap-10">
+        <label className="recipe-select-checkbox">
+          <input
+            type="checkbox"
+            checked={Boolean(isSelectedForExport)}
+            onChange={onToggleSelectedForExport}
+          />
+        </label>
+
+        <div>
+
+            </div>
+          </div>
+
+          <div className="row gap-8">
+
         <div className="title-sm">{recipe.name}</div>
         <div className="muted mt-6 row wrap gap-10">
           <span className="row gap-6"><Clock3 size={16} /> {recipe.time} min</span>
@@ -995,6 +1010,8 @@ export default function App() {
     ingredientTagsText: "",
     stepsText: ""
   });
+
+const [selectedExportRecipeIds, setSelectedExportRecipeIds] = useState({});
 
   const [importUrl, setImportUrl] = useState("");
 const [importStatus, setImportStatus] = useState("");
@@ -1304,6 +1321,81 @@ const toggleIngredientChecked = (recipe, day, index) => {
       return next;
     });
   };
+
+  const toggleRecipeSelectedForExport = (recipeId) => {
+  setSelectedExportRecipeIds((current) => ({
+    ...current,
+    [recipeId]: !current[recipeId]
+  }));
+};
+
+const downloadRecipesFile = (recipesToExport, filename = "recipes-export.json") => {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    version: 1,
+    recipes: recipesToExport
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json"
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+const exportAllRecipes = () => {
+  downloadRecipesFile(recipes, "all-recipes.json");
+};
+
+const exportSelectedRecipes = () => {
+  const selectedRecipes = recipes.filter((recipe) => selectedExportRecipeIds[recipe.id]);
+  if (selectedRecipes.length === 0) return;
+  downloadRecipesFile(selectedRecipes, "selected-recipes.json");
+};
+
+const importRecipesFromFile = async (file) => {
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+
+  const importedRecipes = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed.recipes)
+      ? parsed.recipes
+      : [];
+
+  if (importedRecipes.length === 0) {
+    throw new Error("No recipes found in that file.");
+  }
+
+  const normalizedImported = importedRecipes.map((recipe) => {
+    const normalized = normalizeRecipe(recipe);
+    return {
+      ...normalized,
+      id:
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    };
+  });
+
+  setRecipes((current) => [...current, ...normalizedImported]);
+
+  setRecipeServings((current) => {
+    const next = { ...current };
+    normalizedImported.forEach((recipe) => {
+      next[recipe.id] = 1;
+    });
+    return next;
+  });
+};
+
 
   const rerollPlan = () => {
     setWeeklyPlan(toSevenDayPlan(generatePlan(recipes, mealCount, maxWeeklyTime), mealCount));
@@ -1643,6 +1735,36 @@ const toggleIngredientChecked = (recipe, day, index) => {
             {activeTab === "recipes" && (
               <div className={cardClass()}>
                 <h2 className="title-md">Saved recipes</h2>
+                <div className="row wrap gap-8 mt-16">
+                  <button className={buttonClass("secondary")} onClick={exportAllRecipes}>
+                    Export all
+                  </button>
+
+                  <button className={buttonClass("secondary")} onClick={exportSelectedRecipes}>
+                    Export selected
+                  </button>
+
+                  <label className={`${buttonClass("secondary")} file-button-label`}>
+                    Import recipes
+                    <input
+                      type="file"
+                      accept="application/json"
+                      className="hidden-file-input"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        try {
+                          await importRecipesFromFile(file);
+                        } catch (error) {
+                          alert(error instanceof Error ? error.message : "Failed to import recipes.");
+                        }
+
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
                 <div className="stack-12 mt-16">
                   {recipes.length === 0 ? (
                     <div className="notice">No recipes yet.</div>
@@ -1653,6 +1775,8 @@ const toggleIngredientChecked = (recipe, day, index) => {
                         recipe={recipe}
                         onSave={saveRecipe}
                         onDelete={removeRecipe}
+                        isSelectedForExport={selectedExportRecipeIds[recipe.id]}
+                        onToggleSelectedForExport={() => toggleRecipeSelectedForExport(recipe.id)}
                       />
                     ))
                   )}
