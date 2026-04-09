@@ -1005,6 +1005,8 @@ export default function App() {
   const [regenDayIndex, setRegenDayIndex] = useState(0);
   const [user, setUser] = useState(null);
 
+  const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
+
   const [ingredientChecks, setIngredientChecks] = useState(
   initialState.ingredientChecks || {}
 );
@@ -1057,6 +1059,7 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
       data: { subscription }
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      setHasLoadedCloudData(false);
     });
 
     return () => {
@@ -1071,42 +1074,47 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
     let cancelled = false;
 
     async function loadCloudData() {
-      const { data, error } = await supabase
-        .from("user_recipe_plans")
-        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
-        .eq("user_id", user.id)
-        .maybeSingle();
+  const { data, error } = await supabase
+    .from("user_recipe_plans")
+    .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-      if (cancelled || error) return;
+  if (cancelled || error) {
+    if (!cancelled) setHasLoadedCloudData(true);
+    return;
+  }
 
-      if (data) {
-        const nextRecipes =
-          Array.isArray(data.recipes) && data.recipes.length > 0
-            ? data.recipes.map(normalizeRecipe)
-            : starterRecipes;
+  if (data) {
+    const nextRecipes =
+      Array.isArray(data.recipes) && data.recipes.length > 0
+        ? data.recipes.map(normalizeRecipe)
+        : starterRecipes;
 
-        setIngredientChecks(
-          data.ingredient_checks && typeof data.ingredient_checks === "object"
-            ? data.ingredient_checks
-            : {}
-        );
+    setIngredientChecks(
+      data.ingredient_checks && typeof data.ingredient_checks === "object"
+        ? data.ingredient_checks
+        : {}
+    );
 
-        const nextMealCount = Number(data.meal_count) || 5;
-        const nextMaxWeeklyTime = Number.isFinite(data.max_weekly_time)
-          ? data.max_weekly_time
-          : 240;
+    const nextMealCount = Number(data.meal_count) || 5;
+    const nextMaxWeeklyTime = Number.isFinite(data.max_weekly_time)
+      ? data.max_weekly_time
+      : 240;
 
-        setRecipes(nextRecipes);
-        setMealCount(nextMealCount);
-        setMaxWeeklyTime(nextMaxWeeklyTime);
-        setWeeklyPlan(preserveSevenDayPlan(data.weekly_plan || []));
-        setRecipeServings(
-          data.recipe_servings && typeof data.recipe_servings === "object"
-            ? data.recipe_servings
-            : {}
-        );
-      }
-    }
+    setRecipes(nextRecipes);
+    setMealCount(nextMealCount);
+    setMaxWeeklyTime(nextMaxWeeklyTime);
+    setWeeklyPlan(preserveSevenDayPlan(data.weekly_plan || []));
+    setRecipeServings(
+      data.recipe_servings && typeof data.recipe_servings === "object"
+        ? data.recipe_servings
+        : {}
+    );
+  }
+
+  setHasLoadedCloudData(true);
+}
 
     loadCloudData();
 
@@ -1116,7 +1124,7 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
   }, [user?.id]);
 
   useEffect(() => {
-    if (!supabase || !user) return;
+    if (!supabase || !user || !hasLoadedCloudData) return;
 
     const timeout = setTimeout(async () => {
       await supabase.from("user_recipe_plans").upsert(
