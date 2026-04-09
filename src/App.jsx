@@ -1717,6 +1717,44 @@ const toggleIngredientChecked = (recipe, day, servings, index) => {
                     >
                       <div className="row-between gap-8">
                         <div className="title-sm">{day}</div>
+
+                        <button
+                          type="button"
+                          className="day-reroll-button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+
+                            setWeeklyPlan((current) => {
+                              const currentPlan = toSevenDayPlan(current, mealCount);
+                              const excludedIds = currentPlan
+                                .map((scheduledRecipe, scheduledIndex) =>
+                                  scheduledIndex !== index && scheduledRecipe ? scheduledRecipe.id : null
+                                )
+                                .filter(Boolean);
+
+                              const usedTimeWithoutDay = currentPlan.reduce(
+                                (sum, scheduledRecipe, scheduledIndex) =>
+                                  scheduledIndex === index ? sum : sum + (scheduledRecipe?.time || 0),
+                                0
+                              );
+
+                              const remainingTime =
+                                maxWeeklyTime > 0 ? Math.max(0, maxWeeklyTime - usedTimeWithoutDay) : 0;
+
+                              const replacement = pickSingleRecipe(recipes, excludedIds, remainingTime);
+                              if (!replacement) return currentPlan;
+
+                              const updated = [...currentPlan];
+                              updated[index] = replacement;
+                              return updated;
+                            });
+                          }}
+                          aria-label={`Regenerate ${day}`}
+                          title={`Regenerate ${day}`}
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+
                         <span className={badgeClass()}>
                           {index < mealCount ? `Meal ${index + 1}` : "Open"}
                         </span>
