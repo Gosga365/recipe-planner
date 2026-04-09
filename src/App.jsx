@@ -1327,7 +1327,9 @@ const toggleIngredientChecked = (recipe, day, servings, index) => {
 
   const rerollSingleDay = () => {
     setWeeklyPlan((current) => {
-      const currentPlan = toSevenDayPlan(current, mealCount);
+      const currentPlan = Array.isArray(current)
+          ? DAYS.map((_, i) => current[i] || null)
+          : DAYS.map(() => null);
       const excludedIds = currentPlan
         .map((recipe, index) => (index !== regenDayIndex && recipe ? recipe.id : null))
         .filter(Boolean);
@@ -1725,7 +1727,10 @@ const toggleIngredientChecked = (recipe, day, servings, index) => {
                             e.stopPropagation();
 
                             setWeeklyPlan((current) => {
-                              const currentPlan = toSevenDayPlan(current, mealCount);
+                              const currentPlan = Array.isArray(current)
+                                ? DAYS.map((_, i) => current[i] || null)
+                                : DAYS.map(() => null);
+
                               const excludedIds = currentPlan
                                 .map((scheduledRecipe, scheduledIndex) =>
                                   scheduledIndex !== index && scheduledRecipe ? scheduledRecipe.id : null
