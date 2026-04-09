@@ -465,3 +465,29 @@ input[type="file"] {
 .grocery-section-already-have li {
   color: #64748b;
 }
+
+/* --- Recipe Import UI --- */
+.import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-row input[type="url"] {
+  flex: 1;
+  min-width: 220px;
+}
+
+.import-status {
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.import-status.error {
+  color: #dc2626;
+}
+
+.import-status.success {
+  color: #16a34a;
+}
+
