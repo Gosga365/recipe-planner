@@ -439,7 +439,12 @@ return { recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredie
 
 function fileToDataUrl(
   file,
-  { maxWidth = 1400, maxHeight = 1400, quality = 0.82 } = {}
+  {
+    maxWidth = 1200,
+    maxHeight = 1200,
+    quality = 0.78,
+    maxBytes = 900 * 1024
+  } = {}
 ) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -451,8 +456,8 @@ function fileToDataUrl(
         let { width, height } = img;
         const scale = Math.min(maxWidth / width, maxHeight / height, 1);
 
-        width = Math.round(width * scale);
-        height = Math.round(height * scale);
+        width = Math.max(1, Math.round(width * scale));
+        height = Math.max(1, Math.round(height * scale));
 
         const canvas = document.createElement("canvas");
         canvas.width = width;
@@ -466,13 +471,21 @@ function fileToDataUrl(
 
         ctx.drawImage(img, 0, 0, width, height);
 
-        const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
-        const compressed = canvas.toDataURL(
-          outputType,
-          outputType === "image/png" ? undefined : quality
-        );
+        const usePng = file.type === "image/png";
+        let outputType = usePng ? "image/png" : "image/jpeg";
+        let currentQuality = usePng ? undefined : quality;
+        let result = canvas.toDataURL(outputType, currentQuality);
 
-        resolve(compressed);
+        while (
+          outputType === "image/jpeg" &&
+          result.length > maxBytes * 1.37 &&
+          currentQuality > 0.45
+        ) {
+          currentQuality -= 0.08;
+          result = canvas.toDataURL(outputType, currentQuality);
+        }
+
+        resolve(result);
       };
 
       img.onerror = () => reject(new Error("Failed to load image"));
