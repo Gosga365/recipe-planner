@@ -546,3 +546,13 @@ input[type="file"] {
   color: #64748b;
   font-size: 0.95rem;
 }
+
+/*  Import from picture button */
+
+.file-button-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
