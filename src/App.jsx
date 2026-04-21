@@ -732,16 +732,24 @@ function parseRecipeFromImageText(rawText) {
   };
 }
 
-function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggleSelectedForExport }) {
+function RecipeEditorRow({
+  recipe,
+  onSave,
+  onDelete,
+  isSelectedForExport,
+  onToggleSelectedForExport
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
-
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => setDraft(recipe), [recipe]);
 
   const updateIngredientField = (value) => {
-    const currentTags = (draft.ingredients || []).map((item) => normalizeIngredient(item).locationTag);
+    const currentTags = (draft.ingredients || []).map(
+      (item) => normalizeIngredient(item).locationTag
+    );
+
     setDraft((current) => ({
       ...current,
       ingredients: value.split("\n").map((line, index) => ({
@@ -751,19 +759,9 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
     }));
   };
 
- const updateIngredientTags = (value) => {
-    const currentTexts = (draft.ingredients || []).map((item) => normalizeIngredient(item).text);
-    setDraft((current) => ({
-      ...current,
-      ingredients: value.split("\n").map((line, index) => ({
-        text: currentTexts[index] || "",
-        locationTag: line
-      }))
-    }));
-  };
-
   const saveChanges = () => {
     if (!draft.name.trim()) return;
+
     onSave({
       ...draft,
       name: draft.name.trim(),
@@ -772,155 +770,240 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
       time: Math.max(1, Number(draft.time) || 1),
       ingredients: (draft.ingredients || [])
         .map(normalizeIngredient)
-        .map((item) => ({ text: item.text.trim(), locationTag: item.locationTag.trim() }))
+        .map((item) => ({
+          text: item.text.trim(),
+          locationTag: item.locationTag.trim()
+        }))
         .filter((item) => item.text),
       steps: (draft.steps || []).map((item) => item.trim()).filter(Boolean)
     });
+
     setIsEditing(false);
   };
 
-  if (isEditing) {
-  return (
-    <>
-      <motion.div layout className={cardClass()}>
-        <div className="grid-4">
-          <div>
-            <LabelBox>Name</LabelBox>
-            <input
-              className={inputClass()}
-              value={draft.name}
-              onChange={(e) => setDraft((c) => ({ ...c, name: e.target.value }))}
-            />
-          </div>
-          <div>
-            <LabelBox>Rarity</LabelBox>
-            <input
-              className={inputClass()}
-              type="number"
-              min="1"
-              max="5"
-              value={draft.rarity}
-              onChange={(e) =>
-                setDraft((c) => ({
-                  ...c,
-                  rarity: Math.max(1, Math.min(5, Number(e.target.value) || 1))
-                }))
-              }
-            />
-          </div>
-          <div>
-            <LabelBox>Time (min)</LabelBox>
-            <input
-              className={inputClass()}
-              type="number"
-              min="1"
-              value={draft.time}
-              onChange={(e) =>
-                setDraft((c) => ({
-                  ...c,
-                  time: Math.max(1, Number(e.target.value) || 1)
-                }))
-              }
-            />
-          </div>
-          <div className="actions-end">
-            <button className={buttonClass()} onClick={saveChanges}>
-              <Save size={16} /> Save
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-16">
-          <LabelBox>Meal image</LabelBox>
-          {draft.imageData ? (
-            <img
-              className="recipe-image recipe-image-preview"
-              src={draft.imageData}
-              alt={draft.name || "Recipe preview"}
-            />
-          ) : null}
-          <input
-            className={inputClass()}
-            type="file"
-            accept="image/*"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const imageData = await fileToDataUrl(file);
-              setDraft((c) => ({ ...c, imageData }));
-              e.target.value = "";
-            }}
-          />
-        </div>
-
-        <div className="grid-3 mt-16">
-          <div>
-            <LabelBox>Ingredients</LabelBox>
-            <textarea
-              className={textareaClass()}
-              value={(draft.ingredients || [])
-                .map((item) => normalizeIngredient(item).text)
-                .join("\n")}
-              onChange={(e) => updateIngredientField(e.target.value)}
-            />
-          </div>
-          <div>
-            <LabelBox>Store locations</LabelBox>
-            <div className="stack-8">
-              {(draft.ingredients || []).map((item, index) => {
-                const ingredient = normalizeIngredient(item);
-                if (!ingredient.text.trim()) return null;
-
-                return (
-                  <div key={index} className="row-between gap-8">
-                    <div className="muted">{ingredient.text}</div>
-                    <select
-                      className={inputClass()}
-                      value={ingredient.locationTag || ""}
-                      onChange={(e) => {
-                        setDraft((current) => ({
-                          ...current,
-                          ingredients: (current.ingredients || []).map((ing, i) =>
-                            i === index
-                              ? {
-                                  ...normalizeIngredient(ing),
-                                  locationTag: e.target.value
-                                }
-                              : normalizeIngredient(ing)
-                          )
-                        }));
-                      }}
-                    >
-                      <option value="">Select</option>
-                      {STORE_LOCATION_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <LabelBox>Steps</LabelBox>
-            <textarea
-              className={textareaClass()}
-              value={(draft.steps || []).join("\n")}
-              onChange={(e) =>
-                setDraft((c) => ({ ...c, steps: e.target.value.split("\n") }))
-              }
-            />
-          </div>
-        </div>
-
+  const confirmDeleteModal = showDeleteConfirm ? (
+    <div className="modal-backdrop" onClick={() => setShowDeleteConfirm(false)}>
+      <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+        <h3 className="title-md">Delete recipe?</h3>
+        <p className="muted mt-10">
+          Are you sure you want to delete <strong>{recipe.name}</strong>?
+        </p>
         <div className="row gap-8 mt-16">
           <button
             className={buttonClass("secondary")}
-            onClick={() => setIsEditing(false)}
+            onClick={() => setShowDeleteConfirm(false)}
           >
-            <X size={16} /> Cancel
+            Cancel
+          </button>
+          <button
+            className={buttonClass()}
+            onClick={() => {
+              setShowDeleteConfirm(false);
+              onDelete(recipe.id);
+            }}
+          >
+            <Trash2 size={16} /> Confirm Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (isEditing) {
+    return (
+      <>
+        <motion.div layout className={cardClass()}>
+          <div className="grid-4">
+            <div>
+              <LabelBox>Name</LabelBox>
+              <input
+                className={inputClass()}
+                value={draft.name}
+                onChange={(e) =>
+                  setDraft((current) => ({ ...current, name: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <LabelBox>Rarity</LabelBox>
+              <input
+                className={inputClass()}
+                type="number"
+                min="1"
+                max="5"
+                value={draft.rarity}
+                onChange={(e) =>
+                  setDraft((current) => ({
+                    ...current,
+                    rarity: Math.max(1, Math.min(5, Number(e.target.value) || 1))
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <LabelBox>Time (min)</LabelBox>
+              <input
+                className={inputClass()}
+                type="number"
+                min="1"
+                value={draft.time}
+                onChange={(e) =>
+                  setDraft((current) => ({
+                    ...current,
+                    time: Math.max(1, Number(e.target.value) || 1)
+                  }))
+                }
+              />
+            </div>
+            <div className="actions-end">
+              <button className={buttonClass()} onClick={saveChanges}>
+                <Save size={16} /> Save
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-16">
+            <LabelBox>Meal image</LabelBox>
+            {draft.imageData ? (
+              <img
+                className="recipe-image recipe-image-preview"
+                src={draft.imageData}
+                alt={draft.name || "Recipe preview"}
+              />
+            ) : null}
+            <input
+              className={inputClass()}
+              type="file"
+              accept="image/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const imageData = await fileToDataUrl(file);
+                setDraft((current) => ({ ...current, imageData }));
+                e.target.value = "";
+              }}
+            />
+          </div>
+
+          <div className="grid-3 mt-16">
+            <div>
+              <LabelBox>Ingredients</LabelBox>
+              <textarea
+                className={textareaClass()}
+                value={(draft.ingredients || [])
+                  .map((item) => normalizeIngredient(item).text)
+                  .join("\n")}
+                onChange={(e) => updateIngredientField(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <LabelBox>Store locations</LabelBox>
+              <div className="stack-8">
+                {(draft.ingredients || []).map((item, index) => {
+                  const ingredient = normalizeIngredient(item);
+                  if (!ingredient.text.trim()) return null;
+
+                  return (
+                    <div key={index} className="row-between gap-8">
+                      <div className="muted">{ingredient.text}</div>
+                      <select
+                        className={inputClass()}
+                        value={ingredient.locationTag || ""}
+                        onChange={(e) => {
+                          setDraft((current) => ({
+                            ...current,
+                            ingredients: (current.ingredients || []).map((ing, i) =>
+                              i === index
+                                ? {
+                                    ...normalizeIngredient(ing),
+                                    locationTag: e.target.value
+                                  }
+                                : normalizeIngredient(ing)
+                            )
+                          }));
+                        }}
+                      >
+                        <option value="">Select</option>
+                        {STORE_LOCATION_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <LabelBox>Steps</LabelBox>
+              <textarea
+                className={textareaClass()}
+                value={(draft.steps || []).join("\n")}
+                onChange={(e) =>
+                  setDraft((current) => ({
+                    ...current,
+                    steps: e.target.value.split("\n")
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          <div className="row gap-8 mt-16">
+            <button
+              className={buttonClass("secondary")}
+              onClick={() => setIsEditing(false)}
+            >
+              <X size={16} /> Cancel
+            </button>
+            <button
+              className={buttonClass("secondary")}
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              <Trash2 size={16} /> Delete
+            </button>
+          </div>
+        </motion.div>
+
+        {confirmDeleteModal}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <motion.div layout className={`${cardClass()} row-between wrap gap-12`}>
+        <div className="row gap-10">
+          <label className="recipe-select-checkbox">
+            <input
+              type="checkbox"
+              checked={Boolean(isSelectedForExport)}
+              onChange={onToggleSelectedForExport}
+            />
+          </label>
+
+          <div>
+            <div className="title-sm">{recipe.name}</div>
+            <div className="muted mt-6 row wrap gap-10">
+              <span className="row gap-6">
+                <Clock3 size={16} /> {recipe.time} min
+              </span>
+              <span>Rarity: {recipe.rarity}</span>
+              <span>Ingredients: {(recipe.ingredients || []).length}</span>
+              <span>Steps: {(recipe.steps || []).length}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="row gap-8">
+          <button
+            className={buttonClass("secondary")}
+            onClick={() => setIsEditing(true)}
+          >
+            <Pencil size={16} /> Edit
           </button>
           <button
             className={buttonClass("secondary")}
@@ -931,36 +1014,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
         </div>
       </motion.div>
 
-      {showDeleteConfirm ? (
-        <div
-          className="modal-backdrop"
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="title-md">Delete recipe?</h3>
-            <p className="muted mt-10">
-              Are you sure you want to delete <strong>{recipe.name}</strong>?
-            </p>
-            <div className="row gap-8 mt-16">
-              <button
-                className={buttonClass("secondary")}
-                onClick={() => setShowDeleteConfirm(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className={buttonClass()}
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  onDelete(recipe.id);
-                }}
-              >
-                <Trash2 size={16} /> Confirm Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {confirmDeleteModal}
     </>
   );
 }
