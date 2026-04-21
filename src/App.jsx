@@ -22,6 +22,9 @@ import {
 } from "lucide-react";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
+
+import Tesseract from "tesseract.js";
+
 const DAYS = [
   "Monday",
   "Tuesday",
@@ -635,6 +638,100 @@ async function fetchRecipeHtml(url) {
   throw new Error("Unable to fetch that recipe URL. Some recipe sites block browser imports.");
 }
 
+
+function cleanOcrLine(line) {
+  return line
+    .replace(/[•·●◦▪■]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseRecipeFromImageText(rawText) {
+  const text = rawText.replace(/\r/g, "");
+  const lines = text
+    .split("\n")
+    .map(cleanOcrLine)
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    throw new Error("Could not read any recipe text from that image.");
+  }
+
+  const lowerLines = lines.map((line) => line.toLowerCase());
+
+  const findSectionIndex = (keywords) =>
+    lowerLines.findIndex((line) => keywords.some((keyword) => line.includes(keyword)));
+
+  const ingredientsIndex = findSectionIndex(["ingredients"]);
+  const instructionsIndex = findSectionIndex([
+    "instructions",
+    "directions",
+    "method",
+    "steps",
+    "preparation"
+  ]);
+
+  let name = lines[0] || "Imported Recipe";
+
+  const timeLine =
+    lines.find((line) =>
+      /(\d+)\s*(min|mins|minutes|hour|hours|hr|hrs)/i.test(line)
+    ) || "";
+
+  let time = "";
+  const timeMatch = timeLine.match(/(\d+)/);
+  if (timeMatch) {
+    time = String(Math.max(1, Number(timeMatch[1])));
+  }
+
+  let ingredientLines = [];
+  let stepLines = [];
+
+  if (ingredientsIndex !== -1 && instructionsIndex !== -1) {
+    const start = Math.min(ingredientsIndex, instructionsIndex);
+    const end = Math.max(ingredientsIndex, instructionsIndex);
+
+    if (ingredientsIndex < instructionsIndex) {
+      ingredientLines = lines.slice(ingredientsIndex + 1, instructionsIndex);
+      stepLines = lines.slice(instructionsIndex + 1);
+    } else {
+      stepLines = lines.slice(instructionsIndex + 1, ingredientsIndex);
+      ingredientLines = lines.slice(ingredientsIndex + 1);
+    }
+  } else if (ingredientsIndex !== -1) {
+    ingredientLines = lines.slice(ingredientsIndex + 1);
+  } else if (instructionsIndex !== -1) {
+    stepLines = lines.slice(instructionsIndex + 1);
+  } else {
+    const splitPoint = Math.max(2, Math.floor(lines.length * 0.45));
+    ingredientLines = lines.slice(1, splitPoint);
+    stepLines = lines.slice(splitPoint);
+  }
+
+  ingredientLines = ingredientLines
+    .map(cleanOcrLine)
+    .filter(Boolean)
+    .filter((line) => !/^(ingredients|instructions|directions|method|steps)$/i.test(line));
+
+  stepLines = stepLines
+    .map((line) => line.replace(/^\d+[\.\)]\s*/, "").trim())
+    .map(cleanOcrLine)
+    .filter(Boolean)
+    .filter((line) => !/^(ingredients|instructions|directions|method|steps)$/i.test(line));
+
+  if (!ingredientLines.length && !stepLines.length) {
+    throw new Error("Could not confidently detect ingredients or steps from that image.");
+  }
+
+  return {
+    name,
+    time,
+    ingredientsText: ingredientLines.join("\n"),
+    ingredientTagsText: ingredientLines.map(() => "").join("\n"),
+    stepsText: stepLines.join("\n")
+  };
+}
+
 function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggleSelectedForExport }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
@@ -1005,6 +1102,8 @@ export default function App() {
   const [regenDayIndex, setRegenDayIndex] = useState(0);
   const [user, setUser] = useState(null);
 
+  const [isImportingRecipeImage, setIsImportingRecipeImage] = useState(false);
+
   const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
 
   const [ingredientChecks, setIngredientChecks] = useState(
@@ -1224,6 +1323,41 @@ const toggleIngredientChecked = (recipe, day, index) => {
     if (!supabase) return;
     await supabase.auth.signOut();
   };
+
+const importRecipeFromImage = async (file) => {
+  if (!file) return;
+
+  setIsImportingRecipeImage(true);
+  setImportStatus("Reading recipe image...");
+
+  try {
+    const {
+      data: { text }
+    } = await Tesseract.recognize(file, "eng");
+
+    const imported = parseRecipeFromImageText(text);
+
+    setNewRecipe((current) => ({
+      ...current,
+      name: imported.name || current.name,
+      time: imported.time || current.time,
+      ingredientsText: imported.ingredientsText || current.ingredientsText,
+      ingredientTagsText: imported.ingredientTagsText || current.ingredientTagsText,
+      stepsText: imported.stepsText || current.stepsText
+    }));
+
+    setImportStatus("Recipe imported from image. Review and save it when ready.");
+  } catch (error) {
+    setImportStatus(
+      error instanceof Error
+        ? error.message
+        : "Failed to import recipe from image."
+    );
+  } finally {
+    setIsImportingRecipeImage(false);
+  }
+};
+
 
   const importRecipeFromUrl = async () => {
   const trimmedUrl = importUrl.trim();
@@ -1734,6 +1868,25 @@ const importRecipesFromFile = async (file) => {
                     </button>
                   </div>
                   {importStatus ? <div className="muted mt-10">{importStatus}</div> : null}
+                </div>
+
+                <div className="mt-16">
+                  <LabelBox>Import from recipe picture</LabelBox>
+                  <label className={`${buttonClass("secondary")} file-button-label`}>
+                    <Plus size={16} /> {isImportingRecipeImage ? "Reading image..." : "Import Picture"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden-file-input"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        await importRecipeFromImage(file);
+                        e.target.value = "";
+                      }}
+                      disabled={isImportingRecipeImage}
+                    />
+                  </label>
                 </div>
 
 
