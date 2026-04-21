@@ -129,6 +129,40 @@ function normalizeIngredient(item) {
   };
 }
 
+const applyOcrPreviewToForm = () => {
+  if (!ocrPreview) return;
+
+  setNewRecipe((current) => ({
+    ...current,
+    name: ocrPreview.name || current.name,
+    time: ocrPreview.time || current.time,
+    ingredientsText: ocrPreview.ingredientsText || current.ingredientsText,
+    ingredientTagsText:
+      ocrPreview.ingredientTagsText || current.ingredientTagsText,
+    stepsText: ocrPreview.stepsText || current.stepsText
+  }));
+
+  setOcrPreview(null);
+  setImportStatus("Recipe preview applied to the form.");
+};
+
+const discardOcrPreview = () => {
+  setOcrPreview(null);
+  setImportStatus("Image import preview discarded.");
+};
+
+const updateOcrPreviewField = (field, value) => {
+  setOcrPreview((current) =>
+    current
+      ? {
+          ...current,
+          [field]: value
+        }
+      : current
+  );
+};
+
+
 function normalizeRecipe(recipe) {
   return {
     ...recipe,
@@ -1103,6 +1137,7 @@ export default function App() {
   const [user, setUser] = useState(null);
 
   const [isImportingRecipeImage, setIsImportingRecipeImage] = useState(false);
+  const [ocrPreview, setOcrPreview] = useState(null);
 
   const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
 
@@ -1337,16 +1372,16 @@ const importRecipeFromImage = async (file) => {
 
     const imported = parseRecipeFromImageText(text);
 
-    setNewRecipe((current) => ({
-      ...current,
-      name: imported.name || current.name,
-      time: imported.time || current.time,
-      ingredientsText: imported.ingredientsText || current.ingredientsText,
-      ingredientTagsText: imported.ingredientTagsText || current.ingredientTagsText,
-      stepsText: imported.stepsText || current.stepsText
-    }));
+    setOcrPreview({
+      name: imported.name || "",
+      time: imported.time || "",
+      ingredientsText: imported.ingredientsText || "",
+      ingredientTagsText: imported.ingredientTagsText || "",
+      stepsText: imported.stepsText || "",
+      rawText: text || ""
+    });
 
-    setImportStatus("Recipe imported from image. Review and save it when ready.");
+    setImportStatus("Recipe text extracted. Review it before applying.");
   } catch (error) {
     setImportStatus(
       error instanceof Error
@@ -1888,6 +1923,89 @@ const importRecipesFromFile = async (file) => {
                     />
                   </label>
                 </div>
+
+                {ocrPreview ? (
+                  <div className={`${cardClass()} mt-16`}>
+                    <div className="row-between wrap gap-12">
+                      <div>
+                        <h3 className="title-md">Imported recipe preview</h3>
+                        <p className="muted mt-6">
+                          Review and edit the extracted text before applying it to the form.
+                        </p>
+                      </div>
+
+                      <div className="row wrap gap-8">
+                        <button
+                          type="button"
+                          className={buttonClass("secondary")}
+                          onClick={discardOcrPreview}
+                        >
+                          <X size={16} /> Discard
+                        </button>
+                        <button
+                          type="button"
+                          className={buttonClass()}
+                          onClick={applyOcrPreviewToForm}
+                        >
+                          <Save size={16} /> Apply to form
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid-3 mt-16">
+                      <div>
+                        <LabelBox>Recipe name</LabelBox>
+                        <input
+                          className={inputClass()}
+                          value={ocrPreview.name}
+                          onChange={(e) => updateOcrPreviewField("name", e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <LabelBox>Cook time (min)</LabelBox>
+                        <input
+                          className={inputClass()}
+                          type="number"
+                          min="1"
+                          value={ocrPreview.time}
+                          onChange={(e) => updateOcrPreviewField("time", e.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <LabelBox>Raw OCR text</LabelBox>
+                        <textarea
+                          className={textareaClass()}
+                          value={ocrPreview.rawText}
+                          onChange={(e) => updateOcrPreviewField("rawText", e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid-2 mt-16">
+                      <div>
+                        <LabelBox>Ingredients</LabelBox>
+                        <textarea
+                          className={textareaClass()}
+                          value={ocrPreview.ingredientsText}
+                          onChange={(e) =>
+                            updateOcrPreviewField("ingredientsText", e.target.value)
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <LabelBox>Steps</LabelBox>
+                        <textarea
+                          className={textareaClass()}
+                          value={ocrPreview.stepsText}
+                          onChange={(e) => updateOcrPreviewField("stepsText", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
 
                 <div className="mt-16">
