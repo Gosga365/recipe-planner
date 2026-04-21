@@ -736,6 +736,8 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   useEffect(() => setDraft(recipe), [recipe]);
 
   const updateIngredientField = (value) => {
@@ -864,11 +866,39 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
           <button className={buttonClass("secondary")} onClick={() => setIsEditing(false)}>
             <X size={16} /> Cancel
           </button>
-          <button className={buttonClass("secondary")} onClick={() => onDelete(recipe.id)}>
+          <button className={buttonClass("secondary")} onClick={() => setShowDeleteConfirm(true)}>
             <Trash2 size={16} /> Delete
           </button>
         </div>
       </motion.div>
+
+      {showDeleteConfirm ? (
+          <div className="modal-backdrop" onClick={() => setShowDeleteConfirm(false)}>
+            <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 className="title-md">Delete recipe?</h3>
+              <p className="muted mt-10">
+                Are you sure you want to delete <strong>{recipe.name}</strong>?
+              </p>
+              <div className="row gap-8 mt-16">
+                <button
+                  className={buttonClass("secondary")}
+                  onClick={() => setShowDeleteConfirm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className={buttonClass()}
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    onDelete(recipe.id);
+                  }}
+                >
+                  <Trash2 size={16} /> Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
     );
   }
 
@@ -902,11 +932,39 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
         <button className={buttonClass("secondary")} onClick={() => setIsEditing(true)}>
           <Pencil size={16} /> Edit
         </button>
-        <button className={buttonClass("secondary")} onClick={() => onDelete(recipe.id)}>
+        <button className={buttonClass("secondary")} onClick={() => setShowDeleteConfirm(true)}>
           <Trash2 size={16} /> Delete
         </button>
       </div>
     </motion.div>
+
+    {showDeleteConfirm ? (
+      <div className="modal-backdrop" onClick={() => setShowDeleteConfirm(false)}>
+        <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+          <h3 className="title-md">Delete recipe?</h3>
+          <p className="muted mt-10">
+            Are you sure you want to delete <strong>{recipe.name}</strong>?
+          </p>
+          <div className="row gap-8 mt-16">
+            <button
+              className={buttonClass("secondary")}
+              onClick={() => setShowDeleteConfirm(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className={buttonClass()}
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                onDelete(recipe.id);
+              }}
+            >
+              <Trash2 size={16} /> Confirm Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
   );
 }
 
