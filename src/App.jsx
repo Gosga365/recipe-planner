@@ -52,7 +52,7 @@ const starterRecipes = [
   {
     id: "spaghetti",
     name: "Spaghetti Bolognese",
-    imageData: "",
+    imageUrl: "",
     rarity: 5,
     time: 35,
     ingredients: [
@@ -71,7 +71,7 @@ const starterRecipes = [
   {
     id: "curry",
     name: "Chicken Curry",
-    imageData: "",
+    imageUrl: "",
     rarity: 4,
     time: 40,
     ingredients: [
@@ -132,7 +132,7 @@ function normalizeIngredient(item) {
 function normalizeRecipe(recipe) {
   return {
     ...recipe,
-    imageData: recipe?.imageData || "",
+    imageUrl: recipe?.imageUrl || "",
     ingredients: Array.isArray(recipe.ingredients)
       ? recipe.ingredients.map(normalizeIngredient)
       : [],
@@ -437,13 +437,12 @@ return { recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredie
   }
 }
 
-function fileToDataUrl(
+function compressImageFile(
   file,
   {
     maxWidth = 1200,
     maxHeight = 1200,
-    quality = 0.78,
-    maxBytes = 900 * 1024
+    quality = 0.78
   } = {}
 ) {
   return new Promise((resolve, reject) => {
@@ -471,21 +470,26 @@ function fileToDataUrl(
 
         ctx.drawImage(img, 0, 0, width, height);
 
-        const usePng = file.type === "image/png";
-        let outputType = usePng ? "image/png" : "image/jpeg";
-        let currentQuality = usePng ? undefined : quality;
-        let result = canvas.toDataURL(outputType, currentQuality);
+        const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
 
-        while (
-          outputType === "image/jpeg" &&
-          result.length > maxBytes * 1.37 &&
-          currentQuality > 0.45
-        ) {
-          currentQuality -= 0.08;
-          result = canvas.toDataURL(outputType, currentQuality);
-        }
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error("Failed to compress image"));
+              return;
+            }
 
-        resolve(result);
+            const compressedFile = new File(
+              [blob],
+              file.name || `recipe-image.${outputType === "image/png" ? "png" : "jpg"}`,
+              { type: outputType }
+            );
+
+            resolve(compressedFile);
+          },
+          outputType,
+          outputType === "image/png" ? undefined : quality
+        );
       };
 
       img.onerror = () => reject(new Error("Failed to load image"));
@@ -651,6 +655,33 @@ async function fetchRecipeHtml(url) {
   throw new Error("Unable to fetch that recipe URL. Some recipe sites block browser imports.");
 }
 
+async function uploadRecipeImage(file, userId) {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const extension = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const safeExt = extension.replace(/[^a-z0-9]/g, "") || "jpg";
+  const filePath = `${userId}/${crypto.randomUUID()}.${safeExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("recipe-images")
+    .upload(filePath, file, {
+      upsert: false,
+      contentType: file.type || "image/jpeg"
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { data } = supabase.storage.from("recipe-images").getPublicUrl(filePath);
+
+  return {
+    imageUrl: data.publicUrl,
+    storagePath: filePath
+  };
+}
 
 function cleanOcrLine(line) {
   return line
@@ -755,8 +786,12 @@ function RecipeEditorRow({
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingImageFile, setPendingImageFile] = useState(null);
 
-  useEffect(() => setDraft(recipe), [recipe]);
+  useEffect(() => {
+  setDraft(recipe);
+  setPendingImageFile(null);
+}, [recipe]);
 
   const updateIngredientField = (value) => {
     const currentTags = (draft.ingredients || []).map(
@@ -772,25 +807,30 @@ function RecipeEditorRow({
     }));
   };
 
-  const saveChanges = () => {
+  const saveChanges = async () => {
     if (!draft.name.trim()) return;
+
+    let finalImageUrl = draft.imageUrl || "";
+
+    if (pendingImageFile && user?.id) {
+      const uploaded = await uploadRecipeImage(pendingImageFile, user.id);
+      finalImageUrl = uploaded.imageUrl;
+    }
 
     onSave({
       ...draft,
       name: draft.name.trim(),
-      imageData: draft.imageData || "",
+      imageUrl: finalImageUrl,
       rarity: Math.max(1, Math.min(5, Number(draft.rarity) || 1)),
       time: Math.max(1, Number(draft.time) || 1),
       ingredients: (draft.ingredients || [])
         .map(normalizeIngredient)
-        .map((item) => ({
-          text: item.text.trim(),
-          locationTag: item.locationTag.trim()
-        }))
+        .map((item) => ({ text: item.text.trim(), locationTag: item.locationTag.trim() }))
         .filter((item) => item.text),
       steps: (draft.steps || []).map((item) => item.trim()).filter(Boolean)
     });
 
+    setPendingImageFile(null);
     setIsEditing(false);
   };
 
@@ -877,12 +917,8 @@ function RecipeEditorRow({
 
           <div className="mt-16">
             <LabelBox>Meal image</LabelBox>
-            {draft.imageData ? (
-              <img
-                className="recipe-image recipe-image-preview"
-                src={draft.imageData}
-                alt={draft.name || "Recipe preview"}
-              />
+            {draft.imageUrl ? (
+              <img className="recipe-image recipe-image-preview" src={draft.imageUrl} alt={draft.name || "Recipe preview"} />
             ) : null}
             <input
               className={inputClass()}
@@ -891,8 +927,16 @@ function RecipeEditorRow({
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const imageData = await fileToDataUrl(file);
-                setDraft((current) => ({ ...current, imageData }));
+
+                const compressedFile = await compressImageFile(file);
+                const previewUrl = URL.createObjectURL(compressedFile);
+
+                setPendingImageFile(compressedFile);
+                setDraft((current) => ({
+                  ...current,
+                  imageUrl: previewUrl
+                }));
+
                 e.target.value = "";
               }}
             />
@@ -1105,8 +1149,8 @@ function MealDetailModal({
         </div>
 
         <div className="stack-20 mt-20">
-          {recipe.imageData ? (
-            <img className="recipe-image" src={recipe.imageData} alt={recipe.name} />
+          {recipe.imageUrl ? (
+            <img className="recipe-image" src={recipe.imageUrl} alt={recipe.name} />
           ) : null}
 
           <div className="surface">
@@ -1224,6 +1268,7 @@ export default function App() {
   const [regenDayIndex, setRegenDayIndex] = useState(0);
   const [user, setUser] = useState(null);
 
+
   const [isImportingRecipeImage, setIsImportingRecipeImage] = useState(false);
 
   const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
@@ -1233,14 +1278,15 @@ export default function App() {
 );
 
   const [newRecipe, setNewRecipe] = useState({
-    name: "",
-    imageData: "",
-    rarity: "",
-    time: "",
-    ingredientsText: "",
-    ingredientTagsText: "",
-    stepsText: ""
-  });
+  name: "",
+  imageUrl: "",
+  pendingImageFile: null,
+  rarity: "",
+  time: "",
+  ingredientsText: "",
+  ingredientTagsText: "",
+  stepsText: ""
+});
 
 
 const [recipeImportSummary, setRecipeImportSummary] = useState("");
@@ -1494,7 +1540,7 @@ const importRecipeFromImage = async (file) => {
   try {
     const html = await fetchRecipeHtml(trimmedUrl);
     const imported = parseRecipeFromHtml(html, trimmedUrl);
-    let imageData = newRecipe.imageData;
+    let imageUrl = newRecipe.imageUrl;
 
     if (imported.imageUrl) {
       try {
@@ -1503,17 +1549,17 @@ const importRecipeFromImage = async (file) => {
           const blob = await response.blob();
           const filename = imported.imageUrl.split("/").pop() || "recipe-image";
           const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
-          imageData = await fileToDataUrl(file);
+          imageUrl = await fileToDataUrl(file);
         }
       } catch {
-        imageData = "";
+        imageUrl = "";
       }
     }
 
     setNewRecipe((current) => ({
       ...current,
       name: imported.name || current.name,
-      imageData,
+      imageUrl,
       time: imported.time ? String(imported.time) : current.time,
       ingredientsText: imported.ingredients.map((item) => item.text).join("\n"),
       ingredientTagsText: imported.ingredients.map(() => "").join("\n"),
@@ -1528,7 +1574,7 @@ const importRecipeFromImage = async (file) => {
   }
 };
 
-  const addRecipe = () => {
+  const addRecipe = async () => {
     if (!newRecipe.name.trim()) return;
 
     const parsedRarity = Math.max(1, Math.min(5, Number(newRecipe.rarity) || 1));
@@ -1553,12 +1599,19 @@ const importRecipeFromImage = async (file) => {
         ? crypto.randomUUID()
         : String(Date.now());
 
+    let finalImageUrl = "";
+
+    if (newRecipe.pendingImageFile && user?.id) {
+      const uploaded = await uploadRecipeImage(newRecipe.pendingImageFile, user.id);
+      finalImageUrl = uploaded.imageUrl;
+    }
+
     setRecipes((current) => [
       ...current,
       {
         id: newId,
         name: newRecipe.name.trim(),
-        imageData: newRecipe.imageData || "",
+        imageUrl: finalImageUrl,
         rarity: parsedRarity,
         time: parsedTime,
         ingredients,
@@ -1567,15 +1620,22 @@ const importRecipeFromImage = async (file) => {
     ]);
 
     setRecipeServings((current) => ({ ...current, [newId]: 1 }));
+
+    if (newRecipe.imageUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(newRecipe.imageUrl);
+    }
+
     setNewRecipe({
       name: "",
-      imageData: "",
+      imageUrl: "",
+      pendingImageFile: null,
       rarity: "",
       time: "",
       ingredientsText: "",
       ingredientTagsText: "",
       stepsText: ""
     });
+
     setActiveTab("recipes");
   };
 
@@ -2014,7 +2074,13 @@ const importRecipesFromFile = async (file) => {
 
                 <div className="mt-16">
                   <LabelBox>Meal image</LabelBox>
-                  {newRecipe.imageData ? <img className="recipe-image recipe-image-preview" src={newRecipe.imageData} alt={newRecipe.name || "Recipe preview"} /> : null}
+                  {newRecipe.imageUrl ? (
+                    <img
+                      className="recipe-image recipe-image-preview"
+                      src={newRecipe.imageUrl}
+                      alt={newRecipe.name || "Recipe preview"}
+                    />
+                  ) : null}
                   <input
                     className={inputClass()}
                     type="file"
@@ -2022,8 +2088,16 @@ const importRecipesFromFile = async (file) => {
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      const imageData = await fileToDataUrl(file);
-                      setNewRecipe((c) => ({ ...c, imageData }));
+
+                      const compressedFile = await compressImageFile(file);
+                      const previewUrl = URL.createObjectURL(compressedFile);
+
+                      setNewRecipe((current) => ({
+                        ...current,
+                        imageUrl: previewUrl,
+                        pendingImageFile: compressedFile
+                      }));
+
                       e.target.value = "";
                     }}
                   />
