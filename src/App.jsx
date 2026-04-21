@@ -781,7 +781,8 @@ function RecipeEditorRow({
   onSave,
   onDelete,
   isSelectedForExport,
-  onToggleSelectedForExport
+  onToggleSelectedForExport,
+  user
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
@@ -2218,6 +2219,7 @@ const importRecipesFromFile = async (file) => {
                         onDelete={removeRecipe}
                         isSelectedForExport={selectedExportRecipeIds[recipe.id]}
                         onToggleSelectedForExport={() => toggleRecipeSelectedForExport(recipe.id)}
+                        user={user}
                       />
                     ))
                   )}
