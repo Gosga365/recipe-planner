@@ -903,6 +903,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
   }
 
   return (
+  <>
     <motion.div layout className={`${cardClass()} row-between wrap gap-12`}>
       <div className="row gap-10">
         <label className="recipe-select-checkbox">
@@ -914,37 +915,49 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
         </label>
 
         <div>
-
-            </div>
+          <div className="title-sm">{recipe.name}</div>
+          <div className="muted mt-6 row wrap gap-10">
+            <span className="row gap-6">
+              <Clock3 size={16} /> {recipe.time} min
+            </span>
+            <span>Rarity: {recipe.rarity}</span>
+            <span>Ingredients: {(recipe.ingredients || []).length}</span>
+            <span>Steps: {(recipe.steps || []).length}</span>
           </div>
-
-          <div className="row gap-8">
-
-        <div className="title-sm">{recipe.name}</div>
-        <div className="muted mt-6 row wrap gap-10">
-          <span className="row gap-6"><Clock3 size={16} /> {recipe.time} min</span>
-          <span>Rarity: {recipe.rarity}</span>
-          <span>Ingredients: {(recipe.ingredients || []).length}</span>
-          <span>Steps: {(recipe.steps || []).length}</span>
         </div>
       </div>
+
       <div className="row gap-8">
-        <button className={buttonClass("secondary")} onClick={() => setIsEditing(true)}>
+        <button
+          className={buttonClass("secondary")}
+          onClick={() => setIsEditing(true)}
+        >
           <Pencil size={16} /> Edit
         </button>
-        <button className={buttonClass("secondary")} onClick={() => setShowDeleteConfirm(true)}>
+
+        <button
+          className={buttonClass("secondary")}
+          onClick={() => setShowDeleteConfirm(true)}
+        >
           <Trash2 size={16} /> Delete
         </button>
       </div>
     </motion.div>
 
-    {showDeleteConfirm ? (
-      <div className="modal-backdrop" onClick={() => setShowDeleteConfirm(false)}>
-        <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+    {showDeleteConfirm && (
+      <div
+        className="modal-backdrop"
+        onClick={() => setShowDeleteConfirm(false)}
+      >
+        <div
+          className="confirm-modal"
+          onClick={(e) => e.stopPropagation()}
+        >
           <h3 className="title-md">Delete recipe?</h3>
           <p className="muted mt-10">
             Are you sure you want to delete <strong>{recipe.name}</strong>?
           </p>
+
           <div className="row gap-8 mt-16">
             <button
               className={buttonClass("secondary")}
@@ -952,6 +965,7 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
             >
               Cancel
             </button>
+
             <button
               className={buttonClass()}
               onClick={() => {
@@ -964,8 +978,9 @@ function RecipeEditorRow({ recipe, onSave, onDelete, isSelectedForExport,onToggl
           </div>
         </div>
       </div>
-    ) : null}
-  );
+    )}
+  </>
+);
 }
 
 function GroceryListModal({ items, onClose }) {
