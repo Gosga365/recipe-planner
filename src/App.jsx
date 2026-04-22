@@ -119,6 +119,20 @@ function weightedPick(pool) {
   return pool[pool.length - 1];
 }
 
+
+function weeklyPlanToIdPlan(plan) {
+  const normalized = preserveSevenDayPlan(plan);
+  return normalized.map((recipe) => recipe?.id || null);
+}
+
+function weeklyPlanFromIdPlan(idPlan, recipes) {
+  const recipeMap = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+  return DAYS.map((_, index) => {
+    const recipeId = Array.isArray(idPlan) ? idPlan[index] : null;
+    return recipeId ? recipeMap.get(recipeId) || null : null;
+  });
+}
+
 function normalizeIngredient(item) {
   if (typeof item === "string") {
     return { text: item, locationTag: "" };
@@ -417,9 +431,11 @@ function loadInitialState() {
         : starterRecipes;
     const mealCount = Number(parsed.mealCount) || 5;
     const maxWeeklyTime = Number.isFinite(parsed.maxWeeklyTime) ? parsed.maxWeeklyTime : 240;
-    const weeklyPlan = Array.isArray(parsed.weeklyPlan)
-      ? preserveSevenDayPlan(parsed.weeklyPlan)
-      : toSevenDayPlan(generatePlan(recipes, mealCount, maxWeeklyTime), mealCount);
+    const weeklyPlan = Array.isArray(parsed.weeklyPlanIds)
+        ? weeklyPlanFromIdPlan(parsed.weeklyPlanIds, recipes)
+        : Array.isArray(parsed.weeklyPlan)
+          ? preserveSevenDayPlan(parsed.weeklyPlan)
+          : toSevenDayPlan(generatePlan(recipes, mealCount, maxWeeklyTime), mealCount);
     const recipeServings =
       parsed.recipeServings && typeof parsed.recipeServings === "object"
         ? parsed.recipeServings
@@ -1300,18 +1316,33 @@ const [importStatus, setImportStatus] = useState("");
 const [isImportingRecipe, setIsImportingRecipe] = useState(false);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        recipes,
-        mealCount,
-        maxWeeklyTime,
-        weeklyPlan: preserveSevenDayPlan(weeklyPlan),
-        recipeServings,
-        ingredientChecks
-      })
-    );
-  }, [recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks]);
+      const localPayload = user
+        ? {
+            mealCount,
+            maxWeeklyTime,
+            weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
+            recipeServings,
+            ingredientChecks
+          }
+        : {
+            recipes,
+            mealCount,
+            maxWeeklyTime,
+            weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
+            recipeServings,
+            ingredientChecks
+          };
+
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localPayload));
+      } catch (error) {
+        if (error?.name !== "QuotaExceededError") {
+          throw error;
+        }
+        console.warn("Local storage quota exceeded.", error);
+      }
+    }, [user, recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks]);
+
 
   useEffect(() => {
     if (!supabase) return;
@@ -1550,7 +1581,7 @@ const importRecipeFromImage = async (file) => {
           const blob = await response.blob();
           const filename = imported.imageUrl.split("/").pop() || "recipe-image";
           const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
-          imageUrl = await fileToDataUrl(file);
+          
         }
       } catch {
         imageUrl = "";
