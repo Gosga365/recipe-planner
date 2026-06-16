@@ -2637,6 +2637,28 @@ export default function App() {
                           <RefreshCw size={14} />
                         </button>
 
+                        <button
+                          type="button"
+                          className="day-clear-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            markUserChanged();
+
+                            setWeeklyPlan((current) => {
+                              const updated = Array.isArray(current)
+                                ? DAYS.map((_, i) => current[i] || null)
+                                : DAYS.map(() => null);
+
+                              updated[index] = null;
+                              return updated;
+                            });
+                          }}
+                          aria-label={`Clear ${day}`}
+                          title={`Clear ${day}`}
+                        >
+                          <X size={14} />
+                        </button>
+
                         <span className={badgeClass()}>
                           {index < mealCount ? `Meal ${index + 1}` : "Open"}
                         </span>
