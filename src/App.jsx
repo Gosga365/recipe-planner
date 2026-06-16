@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   BookOpen,
@@ -20,10 +20,8 @@ import {
   UtensilsCrossed,
   X,
 } from "lucide-react";
-import { hasSupabaseConfig, supabase } from "./lib/supabase";
-
-
 import Tesseract from "tesseract.js";
+import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
 const DAYS = [
   "Monday",
@@ -43,7 +41,7 @@ const STORE_LOCATION_OPTIONS = [
   "Frozens",
   "Pasta",
   "Oils",
-  "Aisles"
+  "Aisles",
 ];
 
 const STORAGE_KEY = "recipe-planner-starter-v1";
@@ -57,16 +55,16 @@ const starterRecipes = [
     time: 35,
     ingredients: [
       { text: "1 lb ground beef", locationTag: "Meat" },
-      { text: "1 jar tomato sauce", locationTag: "Pasta aisle" },
-      { text: "12 oz spaghetti", locationTag: "Pasta aisle" },
-      { text: "1 onion", locationTag: "Produce" }
+      { text: "1 jar tomato sauce", locationTag: "Aisles" },
+      { text: "12 oz spaghetti", locationTag: "Pasta" },
+      { text: "1 onion", locationTag: "Produce" },
     ],
     steps: [
       "Boil water and cook the spaghetti.",
       "Brown the beef.",
       "Add sauce and simmer.",
-      "Serve over pasta."
-    ]
+      "Serve over pasta.",
+    ],
   },
   {
     id: "curry",
@@ -77,16 +75,16 @@ const starterRecipes = [
     ingredients: [
       { text: "2 chicken breasts", locationTag: "Meat" },
       { text: "1 onion", locationTag: "Produce" },
-      { text: "2 tbsp curry paste", locationTag: "International" },
-      { text: "1 can coconut milk", locationTag: "International" }
+      { text: "2 tbsp curry paste", locationTag: "Seasonings" },
+      { text: "1 can coconut milk", locationTag: "Aisles" },
     ],
     steps: [
       "Cook onion until soft.",
       "Add chicken and brown lightly.",
       "Add curry paste and coconut milk.",
-      "Simmer until cooked through."
-    ]
-  }
+      "Simmer until cooked through.",
+    ],
+  },
 ];
 
 function cardClass(extra = "") {
@@ -110,47 +108,44 @@ function textareaClass() {
 }
 
 function weightedPick(pool) {
-  const totalWeight = pool.reduce((sum, recipe) => sum + recipe.rarity, 0);
+  const totalWeight = pool.reduce((sum, recipe) => sum + Number(recipe.rarity || 0), 0);
+  if (totalWeight <= 0) return pool[0] || null;
+
   let target = Math.random() * totalWeight;
   for (const recipe of pool) {
-    target -= recipe.rarity;
+    target -= Number(recipe.rarity || 0);
     if (target <= 0) return recipe;
   }
-  return pool[pool.length - 1];
-}
-
-
-function weeklyPlanToIdPlan(plan) {
-  const normalized = preserveSevenDayPlan(plan);
-  return normalized.map((recipe) => recipe?.id || null);
-}
-
-function weeklyPlanFromIdPlan(idPlan, recipes) {
-  const recipeMap = new Map(recipes.map((recipe) => [recipe.id, recipe]));
-  return DAYS.map((_, index) => {
-    const recipeId = Array.isArray(idPlan) ? idPlan[index] : null;
-    return recipeId ? recipeMap.get(recipeId) || null : null;
-  });
+  return pool[pool.length - 1] || null;
 }
 
 function normalizeIngredient(item) {
   if (typeof item === "string") {
     return { text: item, locationTag: "" };
   }
+
   return {
     text: item?.text || "",
-    locationTag: item?.locationTag || ""
+    locationTag: item?.locationTag || "",
   };
 }
 
 function normalizeRecipe(recipe) {
   return {
     ...recipe,
+    id:
+      recipe?.id ||
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`),
+    name: recipe?.name || "",
     imageUrl: recipe?.imageUrl || "",
-    ingredients: Array.isArray(recipe.ingredients)
+    rarity: Number(recipe?.rarity) || 1,
+    time: Number(recipe?.time) || 1,
+    ingredients: Array.isArray(recipe?.ingredients)
       ? recipe.ingredients.map(normalizeIngredient)
       : [],
-    steps: Array.isArray(recipe.steps) ? recipe.steps : []
+    steps: Array.isArray(recipe?.steps) ? recipe.steps : [],
   };
 }
 
@@ -158,6 +153,7 @@ function toSevenDayPlan(plan, mealCount) {
   const normalized = Array.isArray(plan)
     ? plan.map((item) => (item ? normalizeRecipe(item) : null))
     : [];
+
   return DAYS.map((_, index) => (index < mealCount ? normalized[index] || null : null));
 }
 
@@ -169,8 +165,50 @@ function preserveSevenDayPlan(plan) {
   return DAYS.map((_, index) => normalized[index] || null);
 }
 
+function weeklyPlanToIdPlan(plan) {
+  return preserveSevenDayPlan(plan).map((recipe) => recipe?.id || null);
+}
+
+function weeklyPlanFromIdPlan(idPlan, recipes) {
+  const recipeMap = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+
+  return DAYS.map((_, index) => {
+    const recipeId = Array.isArray(idPlan) ? idPlan[index] : null;
+    return recipeId ? recipeMap.get(recipeId) || null : null;
+  });
+}
+
+function mergeRecipesPreserveAll(localRecipes = [], cloudRecipes = []) {
+  const merged = new Map();
+
+  [...cloudRecipes, ...localRecipes].forEach((recipe) => {
+    if (!recipe) return;
+    const normalized = normalizeRecipe(recipe);
+    if (!normalized.id) return;
+
+    merged.set(normalized.id, {
+      ...(merged.get(normalized.id) || {}),
+      ...normalized,
+    });
+  });
+
+  return Array.from(merged.values());
+}
+
+function mergeWeeklyPlansPreferPrimary(primaryPlan, fallbackPlan, mergedRecipes) {
+  const recipeMap = new Map(mergedRecipes.map((recipe) => [recipe.id, recipe]));
+  const primary = preserveSevenDayPlan(primaryPlan);
+  const fallback = preserveSevenDayPlan(fallbackPlan);
+
+  return DAYS.map((_, index) => {
+    const chosen = primary[index] || fallback[index] || null;
+    return chosen?.id ? recipeMap.get(chosen.id) || chosen : null;
+  });
+}
+
 function parseAmountToken(token) {
   if (!token) return null;
+
   if (token.includes("/")) {
     const [numerator, denominator] = token.split("/").map(Number);
     if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
@@ -178,6 +216,7 @@ function parseAmountToken(token) {
     }
     return numerator / denominator;
   }
+
   const value = Number(token);
   return Number.isFinite(value) ? value : null;
 }
@@ -201,7 +240,7 @@ function parseIngredientParts(ingredient) {
       quantity: null,
       unit: "",
       name: "",
-      normalizedKey: ""
+      normalizedKey: "",
     };
   }
 
@@ -213,7 +252,7 @@ function parseIngredientParts(ingredient) {
       quantity: null,
       unit: "",
       name: trimmed,
-      normalizedKey: trimmed.toLowerCase()
+      normalizedKey: trimmed.toLowerCase(),
     };
   }
 
@@ -237,13 +276,14 @@ function parseIngredientParts(ingredient) {
     quantity: amount,
     unit: hasName ? unit : "",
     name,
-    normalizedKey: `${unit.toLowerCase()}|${name.toLowerCase()}`
+    normalizedKey: `${unit.toLowerCase()}|${name.toLowerCase()}`,
   };
 }
 
 function scaleIngredientLine(ingredient, multiplier) {
   const parsed = parseIngredientParts(ingredient);
   if (parsed.quantity === null) return parsed.originalText;
+
   const scaled = formatScaledAmount(parsed.quantity * multiplier);
   const suffix = [parsed.unit, parsed.name].filter(Boolean).join(" ");
   return suffix ? `${scaled} ${suffix}` : scaled;
@@ -256,9 +296,7 @@ function buildGroceryList(weeklyPlan, recipeServings, ingredientChecks = {}, get
     const servings = recipeServings[recipe.id] || 1;
     const day = DAYS[planIndex];
     const checkKey =
-      typeof getIngredientCheckKey === "function"
-        ? getIngredientCheckKey(recipe, day, servings)
-        : "";
+      typeof getIngredientCheckKey === "function" ? getIngredientCheckKey(recipe, day) : "";
     const checkedMap = checkKey ? ingredientChecks[checkKey] || {} : {};
 
     (recipe.ingredients || []).forEach((ingredient, ingredientIndex) => {
@@ -279,7 +317,7 @@ function buildGroceryList(weeklyPlan, recipeServings, ingredientChecks = {}, get
             unit: parsed.unit,
             name: parsed.name,
             locationTag: effectiveLocationTag,
-            texts: []
+            texts: [],
           });
         }
       } else {
@@ -292,7 +330,7 @@ function buildGroceryList(weeklyPlan, recipeServings, ingredientChecks = {}, get
             unit: "",
             name: "",
             locationTag: effectiveLocationTag,
-            texts: [scaledText]
+            texts: [scaledText],
           });
         }
       }
@@ -302,16 +340,19 @@ function buildGroceryList(weeklyPlan, recipeServings, ingredientChecks = {}, get
   return Array.from(grouped.values())
     .flatMap((item) => {
       if (item.quantity !== null) {
-        return [{
-          text: [formatScaledAmount(item.quantity), item.unit, item.name]
-            .filter(Boolean)
-            .join(" "),
-          locationTag: item.locationTag
-        }];
+        return [
+          {
+            text: [formatScaledAmount(item.quantity), item.unit, item.name]
+              .filter(Boolean)
+              .join(" "),
+            locationTag: item.locationTag,
+          },
+        ];
       }
+
       return item.texts.map((text) => ({
         text,
-        locationTag: item.locationTag
+        locationTag: item.locationTag,
       }));
     })
     .sort((a, b) => {
@@ -327,7 +368,7 @@ function buildGroceryList(weeklyPlan, recipeServings, ingredientChecks = {}, get
 function pickSingleRecipe(recipes, excludedIds = [], remainingTime = 0) {
   const validRecipes = recipes.filter((recipe) => {
     const notExcluded = !excludedIds.includes(recipe.id);
-    const validTime = remainingTime <= 0 || recipe.time <= remainingTime;
+    const validTime = remainingTime <= 0 || Number(recipe.time) <= remainingTime;
 
     return (
       recipe.name.trim() &&
@@ -356,7 +397,7 @@ function pickSingleRecipe(recipes, excludedIds = [], remainingTime = 0) {
 
 function generatePlan(recipes, mealCount, maxWeeklyTime) {
   const validRecipes = recipes.filter(
-    (r) => r.name.trim() && Number(r.rarity) > 0 && Number(r.time) > 0
+    (recipe) => recipe.name.trim() && Number(recipe.rarity) > 0 && Number(recipe.time) > 0
   );
 
   if (validRecipes.length === 0) return [];
@@ -373,27 +414,27 @@ function generatePlan(recipes, mealCount, maxWeeklyTime) {
 
     while (selected.length < targetCount && candidatePool.length > 0) {
       const choice = weightedPick(candidatePool);
-      candidatePool = candidatePool.filter((r) => r.id !== choice.id);
+      if (!choice) break;
+
+      candidatePool = candidatePool.filter((recipe) => recipe.id !== choice.id);
 
       if (usedIds.has(choice.id)) continue;
 
-      const projectedTime = timeTotal + choice.time;
+      const projectedTime = timeTotal + Number(choice.time || 0);
       const withinTime =
         maxWeeklyTime <= 0 || projectedTime <= maxWeeklyTime || selected.length === 0;
 
       if (withinTime) {
         selected.push(choice);
         usedIds.add(choice.id);
-        timeTotal += choice.time;
+        timeTotal += Number(choice.time || 0);
       }
     }
 
-    const rarityScore = selected.reduce((sum, r) => sum + r.rarity, 0);
+    const rarityScore = selected.reduce((sum, recipe) => sum + Number(recipe.rarity || 0), 0);
     const completenessBonus = selected.length * 100;
     const timePenalty =
-      maxWeeklyTime > 0 && timeTotal > maxWeeklyTime
-        ? (timeTotal - maxWeeklyTime) * 10
-        : 0;
+      maxWeeklyTime > 0 && timeTotal > maxWeeklyTime ? (timeTotal - maxWeeklyTime) * 10 : 0;
 
     const score = completenessBonus + rarityScore - timePenalty;
 
@@ -413,7 +454,7 @@ function localFallbackState() {
     maxWeeklyTime: 240,
     weeklyPlan: toSevenDayPlan(generatePlan(starterRecipes, 5, 240), 5),
     recipeServings: {},
-    ingredientChecks: {}
+    ingredientChecks: {},
   };
 }
 
@@ -429,38 +470,39 @@ function loadInitialState() {
       Array.isArray(parsed.recipes) && parsed.recipes.length > 0
         ? parsed.recipes.map(normalizeRecipe)
         : starterRecipes;
+
     const mealCount = Number(parsed.mealCount) || 5;
     const maxWeeklyTime = Number.isFinite(parsed.maxWeeklyTime) ? parsed.maxWeeklyTime : 240;
     const weeklyPlan = Array.isArray(parsed.weeklyPlanIds)
-        ? weeklyPlanFromIdPlan(parsed.weeklyPlanIds, recipes)
-        : Array.isArray(parsed.weeklyPlan)
-          ? preserveSevenDayPlan(parsed.weeklyPlan)
-          : toSevenDayPlan(generatePlan(recipes, mealCount, maxWeeklyTime), mealCount);
+      ? weeklyPlanFromIdPlan(parsed.weeklyPlanIds, recipes)
+      : Array.isArray(parsed.weeklyPlan)
+        ? preserveSevenDayPlan(parsed.weeklyPlan)
+        : toSevenDayPlan(generatePlan(recipes, mealCount, maxWeeklyTime), mealCount);
+
     const recipeServings =
       parsed.recipeServings && typeof parsed.recipeServings === "object"
         ? parsed.recipeServings
         : {};
+
     const ingredientChecks =
       parsed.ingredientChecks && typeof parsed.ingredientChecks === "object"
         ? parsed.ingredientChecks
         : {};
 
-return { recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks };
-
- 
+    return {
+      recipes,
+      mealCount,
+      maxWeeklyTime,
+      weeklyPlan,
+      recipeServings,
+      ingredientChecks,
+    };
   } catch {
     return localFallbackState();
   }
 }
 
-function compressImageFile(
-  file,
-  {
-    maxWidth = 1200,
-    maxHeight = 1200,
-    quality = 0.78
-  } = {}
-) {
+function compressImageFile(file, { maxWidth = 1200, maxHeight = 1200, quality = 0.78 } = {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -530,11 +572,11 @@ function firstText(value) {
   if (typeof value === "object") {
     return firstText(
       value.text ||
-      value.name ||
-      value["@value"] ||
-      value.caption ||
-      value.description ||
-      value.url
+        value.name ||
+        value["@value"] ||
+        value.caption ||
+        value.description ||
+        value.url
     );
   }
   return "";
@@ -609,9 +651,7 @@ function parseRecipeFromHtml(html, sourceUrl = "") {
       )
     );
     const title =
-      doc.querySelector('meta[property="og:title"]')?.getAttribute("content") ||
-      doc.title ||
-      "";
+      doc.querySelector('meta[property="og:title"]')?.getAttribute("content") || doc.title || "";
 
     if (ingredientNodes.length > 0 || instructionNodes.length > 0) {
       recipeData = {
@@ -633,7 +673,11 @@ function parseRecipeFromHtml(html, sourceUrl = "") {
     .map((item) => firstText(item))
     .filter(Boolean)
     .map((text) => ({ text, locationTag: "" }));
-  const steps = (Array.isArray(recipeData.recipeInstructions) ? recipeData.recipeInstructions : [recipeData.recipeInstructions])
+  const steps = (
+    Array.isArray(recipeData.recipeInstructions)
+      ? recipeData.recipeInstructions
+      : [recipeData.recipeInstructions]
+  )
     .map(normalizeInstructionStep)
     .filter(Boolean);
   const totalTimeText = firstText(recipeData.totalTime || recipeData.cookTime || recipeData.prepTime);
@@ -684,7 +728,7 @@ async function uploadRecipeImage(file, userId) {
     .from("recipe-images")
     .upload(filePath, file, {
       upsert: false,
-      contentType: file.type || "image/jpeg"
+      contentType: file.type || "image/jpeg",
     });
 
   if (uploadError) {
@@ -695,7 +739,7 @@ async function uploadRecipeImage(file, userId) {
 
   return {
     imageUrl: data.publicUrl,
-    storagePath: filePath
+    storagePath: filePath,
   };
 }
 
@@ -708,17 +752,13 @@ function cleanOcrLine(line) {
 
 function parseRecipeFromImageText(rawText) {
   const text = rawText.replace(/\r/g, "");
-  const lines = text
-    .split("\n")
-    .map(cleanOcrLine)
-    .filter(Boolean);
+  const lines = text.split("\n").map(cleanOcrLine).filter(Boolean);
 
   if (lines.length === 0) {
     throw new Error("Could not read any recipe text from that image.");
   }
 
   const lowerLines = lines.map((line) => line.toLowerCase());
-
   const findSectionIndex = (keywords) =>
     lowerLines.findIndex((line) => keywords.some((keyword) => line.includes(keyword)));
 
@@ -728,15 +768,12 @@ function parseRecipeFromImageText(rawText) {
     "directions",
     "method",
     "steps",
-    "preparation"
+    "preparation",
   ]);
 
-  let name = lines[0] || "Imported Recipe";
-
+  const name = lines[0] || "Imported Recipe";
   const timeLine =
-    lines.find((line) =>
-      /(\d+)\s*(min|mins|minutes|hour|hours|hr|hrs)/i.test(line)
-    ) || "";
+    lines.find((line) => /(\d+)\s*(min|mins|minutes|hour|hours|hr|hrs)/i.test(line)) || "";
 
   let time = "";
   const timeMatch = timeLine.match(/(\d+)/);
@@ -748,9 +785,6 @@ function parseRecipeFromImageText(rawText) {
   let stepLines = [];
 
   if (ingredientsIndex !== -1 && instructionsIndex !== -1) {
-    const start = Math.min(ingredientsIndex, instructionsIndex);
-    const end = Math.max(ingredientsIndex, instructionsIndex);
-
     if (ingredientsIndex < instructionsIndex) {
       ingredientLines = lines.slice(ingredientsIndex + 1, instructionsIndex);
       stepLines = lines.slice(instructionsIndex + 1);
@@ -788,7 +822,7 @@ function parseRecipeFromImageText(rawText) {
     time,
     ingredientsText: ingredientLines.join("\n"),
     ingredientTagsText: ingredientLines.map(() => "").join("\n"),
-    stepsText: stepLines.join("\n")
+    stepsText: stepLines.join("\n"),
   };
 }
 
@@ -798,17 +832,19 @@ function RecipeEditorRow({
   onDelete,
   isSelectedForExport,
   onToggleSelectedForExport,
-  user
+  user,
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(recipe);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pendingImageFile, setPendingImageFile] = useState(null);
+  const [rowError, setRowError] = useState("");
 
   useEffect(() => {
-  setDraft(recipe);
-  setPendingImageFile(null);
-}, [recipe]);
+    setDraft(recipe);
+    setPendingImageFile(null);
+    setRowError("");
+  }, [recipe]);
 
   const updateIngredientField = (value) => {
     const currentTags = (draft.ingredients || []).map(
@@ -819,50 +855,61 @@ function RecipeEditorRow({
       ...current,
       ingredients: value.split("\n").map((line, index) => ({
         text: line,
-        locationTag: currentTags[index] || ""
-      }))
+        locationTag: currentTags[index] || "",
+      })),
     }));
   };
 
   const saveChanges = async () => {
     if (!draft.name.trim()) return;
 
-    let finalImageUrl = draft.imageUrl || "";
+    setRowError("");
 
-    if (pendingImageFile && user?.id) {
-      const uploaded = await uploadRecipeImage(pendingImageFile, user.id);
-      finalImageUrl = uploaded.imageUrl;
+    try {
+      let finalImageUrl = draft.imageUrl || "";
+
+      if (pendingImageFile) {
+        if (!user?.id) {
+          throw new Error("Sign in with Google before saving recipe images.");
+        }
+
+        const uploaded = await uploadRecipeImage(pendingImageFile, user.id);
+        finalImageUrl = uploaded.imageUrl;
+      }
+
+      onSave({
+        ...draft,
+        name: draft.name.trim(),
+        imageUrl: finalImageUrl,
+        rarity: Math.max(1, Math.min(5, Number(draft.rarity) || 1)),
+        time: Math.max(1, Number(draft.time) || 1),
+        ingredients: (draft.ingredients || [])
+          .map(normalizeIngredient)
+          .map((item) => ({ text: item.text.trim(), locationTag: item.locationTag.trim() }))
+          .filter((item) => item.text),
+        steps: (draft.steps || []).map((item) => item.trim()).filter(Boolean),
+      });
+
+      if (draft.imageUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(draft.imageUrl);
+      }
+
+      setPendingImageFile(null);
+      setIsEditing(false);
+    } catch (error) {
+      setRowError(error instanceof Error ? error.message : "Failed to save recipe.");
     }
-
-    onSave({
-      ...draft,
-      name: draft.name.trim(),
-      imageUrl: finalImageUrl,
-      rarity: Math.max(1, Math.min(5, Number(draft.rarity) || 1)),
-      time: Math.max(1, Number(draft.time) || 1),
-      ingredients: (draft.ingredients || [])
-        .map(normalizeIngredient)
-        .map((item) => ({ text: item.text.trim(), locationTag: item.locationTag.trim() }))
-        .filter((item) => item.text),
-      steps: (draft.steps || []).map((item) => item.trim()).filter(Boolean)
-    });
-
-    setPendingImageFile(null);
-    setIsEditing(false);
   };
 
   const confirmDeleteModal = showDeleteConfirm ? (
     <div className="modal-backdrop" onClick={() => setShowDeleteConfirm(false)}>
-      <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="confirm-modal" onClick={(event) => event.stopPropagation()}>
         <h3 className="title-md">Delete recipe?</h3>
         <p className="muted mt-10">
           Are you sure you want to delete <strong>{recipe.name}</strong>?
         </p>
         <div className="row gap-8 mt-16">
-          <button
-            className={buttonClass("secondary")}
-            onClick={() => setShowDeleteConfirm(false)}
-          >
+          <button className={buttonClass("secondary")} onClick={() => setShowDeleteConfirm(false)}>
             Cancel
           </button>
           <button
@@ -889,11 +936,12 @@ function RecipeEditorRow({
               <input
                 className={inputClass()}
                 value={draft.name}
-                onChange={(e) =>
-                  setDraft((current) => ({ ...current, name: e.target.value }))
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, name: event.target.value }))
                 }
               />
             </div>
+
             <div>
               <LabelBox>Rarity</LabelBox>
               <input
@@ -902,14 +950,15 @@ function RecipeEditorRow({
                 min="1"
                 max="5"
                 value={draft.rarity}
-                onChange={(e) =>
+                onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
-                    rarity: Math.max(1, Math.min(5, Number(e.target.value) || 1))
+                    rarity: Math.max(1, Math.min(5, Number(event.target.value) || 1)),
                   }))
                 }
               />
             </div>
+
             <div>
               <LabelBox>Time (min)</LabelBox>
               <input
@@ -917,14 +966,15 @@ function RecipeEditorRow({
                 type="number"
                 min="1"
                 value={draft.time}
-                onChange={(e) =>
+                onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
-                    time: Math.max(1, Number(e.target.value) || 1)
+                    time: Math.max(1, Number(event.target.value) || 1),
                   }))
                 }
               />
             </div>
+
             <div className="actions-end">
               <button className={buttonClass()} onClick={saveChanges}>
                 <Save size={16} /> Save
@@ -932,29 +982,39 @@ function RecipeEditorRow({
             </div>
           </div>
 
+          {rowError ? <div className="import-status error mt-10">{rowError}</div> : null}
+
           <div className="mt-16">
             <LabelBox>Meal image</LabelBox>
             {draft.imageUrl ? (
-              <img className="recipe-image recipe-image-preview" src={draft.imageUrl} alt={draft.name || "Recipe preview"} />
+              <img
+                className="recipe-image recipe-image-preview"
+                src={draft.imageUrl}
+                alt={draft.name || "Recipe preview"}
+              />
             ) : null}
             <input
               className={inputClass()}
               type="file"
               accept="image/*"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
                 if (!file) return;
 
                 const compressedFile = await compressImageFile(file);
                 const previewUrl = URL.createObjectURL(compressedFile);
 
+                if (draft.imageUrl?.startsWith("blob:")) {
+                  URL.revokeObjectURL(draft.imageUrl);
+                }
+
                 setPendingImageFile(compressedFile);
                 setDraft((current) => ({
                   ...current,
-                  imageUrl: previewUrl
+                  imageUrl: previewUrl,
                 }));
 
-                e.target.value = "";
+                event.target.value = "";
               }}
             />
           </div>
@@ -967,7 +1027,7 @@ function RecipeEditorRow({
                 value={(draft.ingredients || [])
                   .map((item) => normalizeIngredient(item).text)
                   .join("\n")}
-                onChange={(e) => updateIngredientField(e.target.value)}
+                onChange={(event) => updateIngredientField(event.target.value)}
               />
             </div>
 
@@ -984,24 +1044,24 @@ function RecipeEditorRow({
                       <select
                         className={inputClass()}
                         value={ingredient.locationTag || ""}
-                        onChange={(e) => {
+                        onChange={(event) => {
                           setDraft((current) => ({
                             ...current,
                             ingredients: (current.ingredients || []).map((ing, i) =>
                               i === index
                                 ? {
                                     ...normalizeIngredient(ing),
-                                    locationTag: e.target.value
+                                    locationTag: event.target.value,
                                   }
                                 : normalizeIngredient(ing)
-                            )
+                            ),
                           }));
                         }}
                       >
                         <option value="">Select</option>
-                        {STORE_LOCATION_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
+                        {STORE_LOCATION_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
                           </option>
                         ))}
                       </select>
@@ -1016,10 +1076,10 @@ function RecipeEditorRow({
               <textarea
                 className={textareaClass()}
                 value={(draft.steps || []).join("\n")}
-                onChange={(e) =>
+                onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
-                    steps: e.target.value.split("\n")
+                    steps: event.target.value.split("\n"),
                   }))
                 }
               />
@@ -1027,10 +1087,7 @@ function RecipeEditorRow({
           </div>
 
           <div className="row gap-8 mt-16">
-            <button
-              className={buttonClass("secondary")}
-              onClick={() => setIsEditing(false)}
-            >
+            <button className={buttonClass("secondary")} onClick={() => setIsEditing(false)}>
               <X size={16} /> Cancel
             </button>
             <button
@@ -1073,10 +1130,7 @@ function RecipeEditorRow({
         </div>
 
         <div className="row gap-8">
-          <button
-            className={buttonClass("secondary")}
-            onClick={() => setIsEditing(true)}
-          >
+          <button className={buttonClass("secondary")} onClick={() => setIsEditing(true)}>
             <Pencil size={16} /> Edit
           </button>
           <button
@@ -1111,7 +1165,9 @@ function GroceryListModal({ items, onClose }) {
             <div className="muted">Current week</div>
             <h2 className="title-lg mt-6">Grocery list</h2>
           </div>
-          <button className={buttonClass("secondary")} onClick={onClose}>Close</button>
+          <button className={buttonClass("secondary")} onClick={onClose}>
+            Close
+          </button>
         </div>
 
         <div className="stack-20 mt-20">
@@ -1119,18 +1175,18 @@ function GroceryListModal({ items, onClose }) {
             <p className="muted">No scheduled meals yet.</p>
           ) : (
             Object.entries(groupedByTag).map(([tag, texts]) => (
-  <div
-    key={tag}
-    className={tag === "Already Have" ? "grocery-section-already-have" : ""}
-  >
-    <h3 className="title-md">{tag}</h3>
-    <ul className="list mt-10">
-      {texts.map((text, index) => (
-        <li key={`${tag}-${index}`}>{text}</li>
-      ))}
-    </ul>
-  </div>
-))
+              <div
+                key={tag}
+                className={tag === "Already Have" ? "grocery-section-already-have" : ""}
+              >
+                <h3 className="title-md">{tag}</h3>
+                <ul className="list mt-10">
+                  {texts.map((text, index) => (
+                    <li key={`${tag}-${index}`}>{text}</li>
+                  ))}
+                </ul>
+              </div>
+            ))
           )}
         </div>
       </div>
@@ -1145,7 +1201,7 @@ function MealDetailModal({
   servings,
   onServingsChange,
   checkedIngredients,
-  onToggleIngredient
+  onToggleIngredient,
 }) {
   if (!recipe) return null;
 
@@ -1162,7 +1218,9 @@ function MealDetailModal({
             <h2 className="title-lg mt-6">{recipe.name}</h2>
             <div className="muted mt-6">{recipe.time} min</div>
           </div>
-          <button className={buttonClass("secondary")} onClick={onClose}>Close</button>
+          <button className={buttonClass("secondary")} onClick={onClose}>
+            Close
+          </button>
         </div>
 
         <div className="stack-20 mt-20">
@@ -1185,7 +1243,7 @@ function MealDetailModal({
               max="6"
               step="1"
               value={servings}
-              onChange={(e) => onServingsChange(Number(e.target.value))}
+              onChange={(event) => onServingsChange(Number(event.target.value))}
             />
           </div>
 
@@ -1244,7 +1302,9 @@ function AuthCard({ user, onSignIn, onSignOut }) {
   return (
     <div className={cardClass("row-between wrap gap-12")}>
       <div>
-        <div className="row gap-8 title-sm"><Cloud size={16} /> Account sync</div>
+        <div className="row gap-8 title-sm">
+          <Cloud size={16} /> Account sync
+        </div>
         {user ? (
           <div className="muted mt-6">
             Signed in as <strong>{user.email}</strong>. Your recipes sync across devices.
@@ -1273,6 +1333,13 @@ function AuthCard({ user, onSignIn, onSignOut }) {
 
 export default function App() {
   const initialState = useMemo(() => loadInitialState(), []);
+  const cloudLoadRef = useRef({
+    recipes: initialState.recipes,
+    weeklyPlan: initialState.weeklyPlan,
+    recipeServings: initialState.recipeServings,
+    ingredientChecks: initialState.ingredientChecks,
+  });
+
   const [recipes, setRecipes] = useState(initialState.recipes);
   const [mealCount, setMealCount] = useState(initialState.mealCount);
   const [maxWeeklyTime, setMaxWeeklyTime] = useState(initialState.maxWeeklyTime);
@@ -1284,65 +1351,53 @@ export default function App() {
   const [draggedMealIndex, setDraggedMealIndex] = useState(null);
   const [regenDayIndex, setRegenDayIndex] = useState(0);
   const [user, setUser] = useState(null);
-
-
   const [isImportingRecipeImage, setIsImportingRecipeImage] = useState(false);
-
   const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
-
-  const [ingredientChecks, setIngredientChecks] = useState(
-  initialState.ingredientChecks || {}
-);
+  const [ingredientChecks, setIngredientChecks] = useState(initialState.ingredientChecks || {});
+  const [recipeImportSummary, setRecipeImportSummary] = useState("");
+  const [selectedExportRecipeIds, setSelectedExportRecipeIds] = useState({});
+  const [importUrl, setImportUrl] = useState("");
+  const [importStatus, setImportStatus] = useState("");
+  const [isImportingRecipe, setIsImportingRecipe] = useState(false);
 
   const [newRecipe, setNewRecipe] = useState({
-  name: "",
-  imageUrl: "",
-  pendingImageFile: null,
-  rarity: "",
-  time: "",
-  ingredientsText: "",
-  ingredientTagsText: "",
-  stepsText: ""
-});
-
-
-const [recipeImportSummary, setRecipeImportSummary] = useState("");
-
-
-const [selectedExportRecipeIds, setSelectedExportRecipeIds] = useState({});
-
-  const [importUrl, setImportUrl] = useState("");
-const [importStatus, setImportStatus] = useState("");
-const [isImportingRecipe, setIsImportingRecipe] = useState(false);
+    name: "",
+    imageUrl: "",
+    pendingImageFile: null,
+    rarity: "",
+    time: "",
+    ingredientsText: "",
+    ingredientTagsText: "",
+    stepsText: "",
+  });
 
   useEffect(() => {
-      const localPayload = user
-        ? {
-            mealCount,
-            maxWeeklyTime,
-            weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
-            recipeServings,
-            ingredientChecks
-          }
-        : {
-            recipes,
-            mealCount,
-            maxWeeklyTime,
-            weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
-            recipeServings,
-            ingredientChecks
-          };
-
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localPayload));
-      } catch (error) {
-        if (error?.name !== "QuotaExceededError") {
-          throw error;
+    const localPayload = user
+      ? {
+          mealCount,
+          maxWeeklyTime,
+          weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
+          recipeServings,
+          ingredientChecks,
         }
-        console.warn("Local storage quota exceeded.", error);
-      }
-    }, [user, recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks]);
+      : {
+          recipes,
+          mealCount,
+          maxWeeklyTime,
+          weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
+          recipeServings,
+          ingredientChecks,
+        };
 
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localPayload));
+    } catch (error) {
+      if (error?.name !== "QuotaExceededError") {
+        throw error;
+      }
+      console.warn("Local storage quota exceeded.", error);
+    }
+  }, [user, recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1355,7 +1410,7 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
     });
 
     const {
-      data: { subscription }
+      data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setHasLoadedCloudData(false);
@@ -1368,96 +1423,195 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
   }, []);
 
   useEffect(() => {
-    if (!supabase || !user) return;
+    if (!supabase || !user) {
+      setHasLoadedCloudData(false);
+      return;
+    }
 
     let cancelled = false;
 
     async function loadCloudData() {
-  const { data, error } = await supabase
-    .from("user_recipe_plans")
-    .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
-    .eq("user_id", user.id)
-    .maybeSingle();
+      const { data, error } = await supabase
+        .from("user_recipe_plans")
+        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-  if (cancelled || error) {
-    if (!cancelled) setHasLoadedCloudData(true);
-    return;
-  }
+      if (cancelled) return;
 
-  if (data) {
-    const nextRecipes =
-      Array.isArray(data.recipes) && data.recipes.length > 0
-        ? data.recipes.map(normalizeRecipe)
-        : starterRecipes;
+      if (error) {
+        setHasLoadedCloudData(true);
+        return;
+      }
 
-    setIngredientChecks(
-      data.ingredient_checks && typeof data.ingredient_checks === "object"
-        ? data.ingredient_checks
-        : {}
-    );
+      if (data) {
+        const cloudRecipes =
+          Array.isArray(data.recipes) && data.recipes.length > 0
+            ? data.recipes.map(normalizeRecipe)
+            : [];
 
-    const nextMealCount = Number(data.meal_count) || 5;
-    const nextMaxWeeklyTime = Number.isFinite(data.max_weekly_time)
-      ? data.max_weekly_time
-      : 240;
+        const mergedRecipes = mergeRecipesPreserveAll(recipes, cloudRecipes);
+        const cloudWeeklyPlan = preserveSevenDayPlan(data.weekly_plan || []);
+        const mergedWeeklyPlan = mergeWeeklyPlansPreferPrimary(
+          cloudWeeklyPlan,
+          weeklyPlan,
+          mergedRecipes
+        );
 
-    setRecipes(nextRecipes);
-    setMealCount(nextMealCount);
-    setMaxWeeklyTime(nextMaxWeeklyTime);
-    setWeeklyPlan(preserveSevenDayPlan(data.weekly_plan || []));
-    setRecipeServings(
-      data.recipe_servings && typeof data.recipe_servings === "object"
-        ? data.recipe_servings
-        : {}
-    );
-  }
+        const mergedRecipeServings = {
+          ...(recipeServings || {}),
+          ...(data.recipe_servings && typeof data.recipe_servings === "object"
+            ? data.recipe_servings
+            : {}),
+        };
 
-  setHasLoadedCloudData(true);
-}
+        const mergedIngredientChecks = {
+          ...(ingredientChecks || {}),
+          ...(data.ingredient_checks && typeof data.ingredient_checks === "object"
+            ? data.ingredient_checks
+            : {}),
+        };
+
+        const nextMealCount = Number(data.meal_count) || mealCount || 5;
+        const nextMaxWeeklyTime = Number.isFinite(data.max_weekly_time)
+          ? data.max_weekly_time
+          : maxWeeklyTime || 240;
+
+        cloudLoadRef.current = {
+          recipes: mergedRecipes,
+          weeklyPlan: mergedWeeklyPlan,
+          recipeServings: mergedRecipeServings,
+          ingredientChecks: mergedIngredientChecks,
+        };
+
+        setRecipes(mergedRecipes);
+        setMealCount(nextMealCount);
+        setMaxWeeklyTime(nextMaxWeeklyTime);
+        setWeeklyPlan(mergedWeeklyPlan);
+        setRecipeServings(mergedRecipeServings);
+        setIngredientChecks(mergedIngredientChecks);
+      } else {
+        cloudLoadRef.current = {
+          recipes,
+          weeklyPlan,
+          recipeServings,
+          ingredientChecks,
+        };
+      }
+
+      setHasLoadedCloudData(true);
+    }
 
     loadCloudData();
 
     return () => {
       cancelled = true;
     };
+    // Intentionally only keyed by user. This prevents a normal state update from re-loading older data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useEffect(() => {
     if (!supabase || !user || !hasLoadedCloudData) return;
 
     const timeout = setTimeout(async () => {
+      const { data } = await supabase
+        .from("user_recipe_plans")
+        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const currentCloudRecipes =
+        Array.isArray(data?.recipes) && data.recipes.length > 0
+          ? data.recipes.map(normalizeRecipe)
+          : [];
+
+      const cloudSnapshot = cloudLoadRef.current;
+
+      const localRecipesChanged = JSON.stringify(recipes) !== JSON.stringify(cloudSnapshot.recipes);
+      const localPlanChanged =
+        JSON.stringify(weeklyPlanToIdPlan(weeklyPlan)) !==
+        JSON.stringify(weeklyPlanToIdPlan(cloudSnapshot.weeklyPlan));
+
+      const localServingsChanged =
+        JSON.stringify(recipeServings || {}) !== JSON.stringify(cloudSnapshot.recipeServings || {});
+      const localChecksChanged =
+        JSON.stringify(ingredientChecks || {}) !== JSON.stringify(cloudSnapshot.ingredientChecks || {});
+
+      const mergedRecipes = mergeRecipesPreserveAll(recipes, currentCloudRecipes);
+
+      const currentCloudWeeklyPlan = preserveSevenDayPlan(data?.weekly_plan || []);
+      const mergedWeeklyPlan = localPlanChanged
+        ? mergeWeeklyPlansPreferPrimary(weeklyPlan, currentCloudWeeklyPlan, mergedRecipes)
+        : mergeWeeklyPlansPreferPrimary(currentCloudWeeklyPlan, weeklyPlan, mergedRecipes);
+
+      const mergedRecipeServings = localServingsChanged
+        ? {
+            ...(data?.recipe_servings || {}),
+            ...recipeServings,
+          }
+        : {
+            ...recipeServings,
+            ...(data?.recipe_servings || {}),
+          };
+
+      const mergedIngredientChecks = localChecksChanged
+        ? {
+            ...(data?.ingredient_checks || {}),
+            ...ingredientChecks,
+          }
+        : {
+            ...ingredientChecks,
+            ...(data?.ingredient_checks || {}),
+          };
+
       await supabase.from("user_recipe_plans").upsert(
         {
           user_id: user.id,
-          recipes,
+          recipes: mergedRecipes,
           meal_count: mealCount,
           max_weekly_time: maxWeeklyTime,
-          weekly_plan: preserveSevenDayPlan(weeklyPlan),
-          recipe_servings: recipeServings,
-          ingredient_checks: ingredientChecks,
-          updated_at: new Date().toISOString()
+          weekly_plan: preserveSevenDayPlan(mergedWeeklyPlan),
+          recipe_servings: mergedRecipeServings,
+          ingredient_checks: mergedIngredientChecks,
+          updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" }
       );
-    }, 500);
+
+      cloudLoadRef.current = {
+        recipes: mergedRecipes,
+        weeklyPlan: mergedWeeklyPlan,
+        recipeServings: mergedRecipeServings,
+        ingredientChecks: mergedIngredientChecks,
+      };
+    }, 700);
 
     return () => clearTimeout(timeout);
-  }, [recipes, mealCount, maxWeeklyTime, weeklyPlan, recipeServings, ingredientChecks, user?.id]);
+  }, [
+    recipes,
+    mealCount,
+    maxWeeklyTime,
+    weeklyPlan,
+    recipeServings,
+    ingredientChecks,
+    user?.id,
+    hasLoadedCloudData,
+  ]);
 
   useEffect(() => {
-  setWeeklyPlan((current) => {
-    const currentPlan = Array.isArray(current)
-      ? DAYS.map((_, i) => current[i] || null)
-      : DAYS.map(() => null);
+    setWeeklyPlan((current) => {
+      const currentPlan = Array.isArray(current)
+        ? DAYS.map((_, index) => current[index] || null)
+        : DAYS.map(() => null);
 
-    return currentPlan.map((recipe) => {
-      if (!recipe) return null;
-
-      const latestRecipe = recipes.find((r) => r.id === recipe.id);
-      return latestRecipe ? latestRecipe : recipe;
+      return currentPlan.map((recipe) => {
+        if (!recipe) return null;
+        const latestRecipe = recipes.find((savedRecipe) => savedRecipe.id === recipe.id);
+        return latestRecipe || recipe;
+      });
     });
-  });
-}, [recipes]);
+  }, [recipes]);
 
   const totalPlanTime = useMemo(
     () => weeklyPlan.reduce((sum, recipe) => sum + (recipe?.time || 0), 0),
@@ -1472,45 +1626,43 @@ const [isImportingRecipe, setIsImportingRecipe] = useState(false);
   const getRecipeServings = (recipe) => (recipe?.id ? recipeServings[recipe.id] || 1 : 1);
 
   const getIngredientCheckKey = (recipe, day) => {
-  if (!recipe?.id || !day) return "";
-  return `${recipe.id}__${day}`;
-};
+    if (!recipe?.id || !day) return "";
+    return `${recipe.id}__${day}`;
+  };
 
-const getCheckedIngredients = (recipe, day) => {
-  const key = getIngredientCheckKey(recipe, day);
-  return key ? ingredientChecks[key] || {} : {};
-};
+  const getCheckedIngredients = (recipe, day) => {
+    const key = getIngredientCheckKey(recipe, day);
+    return key ? ingredientChecks[key] || {} : {};
+  };
 
-const toggleIngredientChecked = (recipe, day, index) => {
-  const key = getIngredientCheckKey(recipe, day);
-  if (!key) return;
+  const toggleIngredientChecked = (recipe, day, index) => {
+    const key = getIngredientCheckKey(recipe, day);
+    if (!key) return;
 
-  setIngredientChecks((current) => ({
-    ...current,
-    [key]: {
-      ...(current[key] || {}),
-      [index]: !(current[key] || {})[index]
-    }
-  }));
-};
-  
+    setIngredientChecks((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] || {}),
+        [index]: !(current[key] || {})[index],
+      },
+    }));
+  };
+
   const groceryListItems = useMemo(
-  () =>
-    buildGroceryList(
-      weeklyPlan.slice(0, mealCount),
-      recipeServings,
-      ingredientChecks,
-      getIngredientCheckKey
-    ),
-  [weeklyPlan, mealCount, recipeServings, ingredientChecks]
-);
-
-  
+    () =>
+      buildGroceryList(
+        weeklyPlan.slice(0, mealCount),
+        recipeServings,
+        ingredientChecks,
+        getIngredientCheckKey
+      ),
+    [weeklyPlan, mealCount, recipeServings, ingredientChecks]
+  );
 
   const updateRecipeServings = (recipeId, nextServings) => {
     setRecipeServings((current) => ({
       ...current,
-      [recipeId]: nextServings
+      [recipeId]: nextServings,
     }));
   };
 
@@ -1524,151 +1676,165 @@ const toggleIngredientChecked = (recipe, day, index) => {
     await supabase.auth.signOut();
   };
 
-const importRecipeFromImage = async (file) => {
-  if (!file) return;
+  const importRecipeFromImage = async (file) => {
+    if (!file) return;
 
-  setIsImportingRecipeImage(true);
-  setImportStatus("Reading recipe image...");
+    setIsImportingRecipeImage(true);
+    setImportStatus("Reading recipe image...");
 
-  try {
-    const {
-      data: { text }
-    } = await Tesseract.recognize(file, "eng");
+    try {
+      const {
+        data: { text },
+      } = await Tesseract.recognize(file, "eng");
 
-    const imported = parseRecipeFromImageText(text);
+      const imported = parseRecipeFromImageText(text);
 
-    setNewRecipe((current) => ({
-      ...current,
-      name: imported.name || current.name,
-      time: imported.time || current.time,
-      ingredientsText: imported.ingredientsText || current.ingredientsText,
-      ingredientTagsText: imported.ingredientTagsText || current.ingredientTagsText,
-      stepsText: imported.stepsText || current.stepsText
-    }));
+      setNewRecipe((current) => ({
+        ...current,
+        name: imported.name || current.name,
+        time: imported.time || current.time,
+        ingredientsText: imported.ingredientsText || current.ingredientsText,
+        ingredientTagsText: imported.ingredientTagsText || current.ingredientTagsText,
+        stepsText: imported.stepsText || current.stepsText,
+      }));
 
-    setImportStatus("Recipe imported from image. Review and save it when ready.");
-  } catch (error) {
-    setImportStatus(
-      error instanceof Error
-        ? error.message
-        : "Failed to import recipe from image."
-    );
-  } finally {
-    setIsImportingRecipeImage(false);
-  }
-};
-
+      setImportStatus("Recipe imported from image. Review and save it when ready.");
+    } catch (error) {
+      setImportStatus(
+        error instanceof Error ? error.message : "Failed to import recipe from image."
+      );
+    } finally {
+      setIsImportingRecipeImage(false);
+    }
+  };
 
   const importRecipeFromUrl = async () => {
-  const trimmedUrl = importUrl.trim();
-  if (!trimmedUrl) {
-    setImportStatus("Paste a recipe URL first.");
-    return;
-  }
-
-  setIsImportingRecipe(true);
-  setImportStatus("Importing recipe...");
-
-  try {
-    const html = await fetchRecipeHtml(trimmedUrl);
-    const imported = parseRecipeFromHtml(html, trimmedUrl);
-    let imageUrl = newRecipe.imageUrl;
-
-    if (imported.imageUrl) {
-      try {
-        const response = await fetch(imported.imageUrl);
-        if (response.ok) {
-          const blob = await response.blob();
-          const filename = imported.imageUrl.split("/").pop() || "recipe-image";
-          const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
-          
-        }
-      } catch {
-        imageUrl = "";
-      }
+    const trimmedUrl = importUrl.trim();
+    if (!trimmedUrl) {
+      setImportStatus("Paste a recipe URL first.");
+      return;
     }
 
-    setNewRecipe((current) => ({
-      ...current,
-      name: imported.name || current.name,
-      imageUrl,
-      time: imported.time ? String(imported.time) : current.time,
-      ingredientsText: imported.ingredients.map((item) => item.text).join("\n"),
-      ingredientTagsText: imported.ingredients.map(() => "").join("\n"),
-      stepsText: imported.steps.join("\n"),
-    }));
+    setIsImportingRecipe(true);
+    setImportStatus("Importing recipe...");
 
-    setImportStatus("Recipe imported. Review and save it when ready.");
-  } catch (error) {
-    setImportStatus(error instanceof Error ? error.message : "Failed to import recipe.");
-  } finally {
-    setIsImportingRecipe(false);
-  }
-};
+    try {
+      const html = await fetchRecipeHtml(trimmedUrl);
+      const imported = parseRecipeFromHtml(html, trimmedUrl);
+      let imageUrl = newRecipe.imageUrl;
+      let pendingImageFile = newRecipe.pendingImageFile;
+
+      if (imported.imageUrl) {
+        try {
+          const response = await fetch(imported.imageUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+            const filename = imported.imageUrl.split("/").pop() || "recipe-image";
+            const sourceFile = new File([blob], filename, {
+              type: blob.type || "image/jpeg",
+            });
+            const compressedFile = await compressImageFile(sourceFile);
+            imageUrl = URL.createObjectURL(compressedFile);
+            pendingImageFile = compressedFile;
+          }
+        } catch {
+          imageUrl = "";
+          pendingImageFile = null;
+        }
+      }
+
+      setNewRecipe((current) => ({
+        ...current,
+        name: imported.name || current.name,
+        imageUrl,
+        pendingImageFile,
+        time: imported.time ? String(imported.time) : current.time,
+        ingredientsText: imported.ingredients.map((item) => item.text).join("\n"),
+        ingredientTagsText: imported.ingredients.map(() => "").join("\n"),
+        stepsText: imported.steps.join("\n"),
+      }));
+
+      setImportStatus("Recipe imported. Review and save it when ready.");
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : "Failed to import recipe.");
+    } finally {
+      setIsImportingRecipe(false);
+    }
+  };
 
   const addRecipe = async () => {
     if (!newRecipe.name.trim()) return;
 
-    const parsedRarity = Math.max(1, Math.min(5, Number(newRecipe.rarity) || 1));
-    const parsedTime = Math.max(1, Number(newRecipe.time) || 1);
-    const ingredientLines = newRecipe.ingredientsText.split("\n");
-    const tagLines = newRecipe.ingredientTagsText.split("\n");
+    setImportStatus("");
 
-    const ingredients = ingredientLines
-      .map((item, index) => ({
-        text: item.trim(),
-        locationTag: (tagLines[index] || "").trim()
-      }))
-      .filter((item) => item.text);
+    try {
+      const parsedRarity = Math.max(1, Math.min(5, Number(newRecipe.rarity) || 1));
+      const parsedTime = Math.max(1, Number(newRecipe.time) || 1);
+      const ingredientLines = newRecipe.ingredientsText.split("\n");
+      const tagLines = newRecipe.ingredientTagsText.split("\n");
 
-    const steps = newRecipe.stepsText
-      .split("\n")
-      .map((item) => item.trim())
-      .filter(Boolean);
+      const ingredients = ingredientLines
+        .map((item, index) => ({
+          text: item.trim(),
+          locationTag: (tagLines[index] || "").trim(),
+        }))
+        .filter((item) => item.text);
 
-    const newId =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : String(Date.now());
+      const steps = newRecipe.stepsText
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean);
 
-    let finalImageUrl = "";
+      const newId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : String(Date.now());
 
-    if (newRecipe.pendingImageFile && user?.id) {
-      const uploaded = await uploadRecipeImage(newRecipe.pendingImageFile, user.id);
-      finalImageUrl = uploaded.imageUrl;
-    }
+      let finalImageUrl = "";
 
-    setRecipes((current) => [
-      ...current,
-      {
-        id: newId,
-        name: newRecipe.name.trim(),
-        imageUrl: finalImageUrl,
-        rarity: parsedRarity,
-        time: parsedTime,
-        ingredients,
-        steps
+      if (newRecipe.pendingImageFile) {
+        if (!user?.id) {
+          throw new Error("Sign in with Google before saving recipe images.");
+        }
+
+        const uploaded = await uploadRecipeImage(newRecipe.pendingImageFile, user.id);
+        finalImageUrl = uploaded.imageUrl;
       }
-    ]);
 
-    setRecipeServings((current) => ({ ...current, [newId]: 1 }));
+      setRecipes((current) => [
+        ...current,
+        {
+          id: newId,
+          name: newRecipe.name.trim(),
+          imageUrl: finalImageUrl,
+          rarity: parsedRarity,
+          time: parsedTime,
+          ingredients,
+          steps,
+        },
+      ]);
 
-    if (newRecipe.imageUrl?.startsWith("blob:")) {
-      URL.revokeObjectURL(newRecipe.imageUrl);
+      setRecipeServings((current) => ({ ...current, [newId]: 1 }));
+
+      if (newRecipe.imageUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(newRecipe.imageUrl);
+      }
+
+      setNewRecipe({
+        name: "",
+        imageUrl: "",
+        pendingImageFile: null,
+        rarity: "",
+        time: "",
+        ingredientsText: "",
+        ingredientTagsText: "",
+        stepsText: "",
+      });
+
+      setActiveTab("recipes");
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : "Failed to add recipe.");
     }
-
-    setNewRecipe({
-      name: "",
-      imageUrl: "",
-      pendingImageFile: null,
-      rarity: "",
-      time: "",
-      ingredientsText: "",
-      ingredientTagsText: "",
-      stepsText: ""
-    });
-
-    setActiveTab("recipes");
   };
 
   const saveRecipe = (updatedRecipe) => {
@@ -1691,143 +1857,137 @@ const importRecipeFromImage = async (file) => {
   };
 
   const toggleRecipeSelectedForExport = (recipeId) => {
-  setSelectedExportRecipeIds((current) => ({
-    ...current,
-    [recipeId]: !current[recipeId]
-  }));
-};
-
-const downloadRecipesFile = (recipesToExport, filename = "recipes-export.json") => {
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    version: 1,
-    recipes: recipesToExport
-  };
-
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: "application/json"
-  });
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-};
-
-const exportAllRecipes = () => {
-  downloadRecipesFile(recipes, "all-recipes.json");
-};
-
-const exportSelectedRecipes = () => {
-  const selectedRecipes = recipes.filter((recipe) => selectedExportRecipeIds[recipe.id]);
-  if (selectedRecipes.length === 0) return;
-  downloadRecipesFile(selectedRecipes, "selected-recipes.json");
-};
-
-const importRecipesFromFile = async (file) => {
-  const text = await file.text();
-  const parsed = JSON.parse(text);
-
-  const importedRecipes = Array.isArray(parsed)
-    ? parsed
-    : Array.isArray(parsed.recipes)
-      ? parsed.recipes
-      : [];
-
-  if (importedRecipes.length === 0) {
-    throw new Error("No recipes found in that file.");
-  }
-
-  const normalizeIngredientText = (ingredient) => {
-    const text =
-      typeof ingredient === "string"
-        ? ingredient
-        : ingredient?.text || "";
-
-    return text.trim().toLowerCase().replace(/\s+/g, " ");
-  };
-
-  const buildDuplicateKey = (recipe) => {
-    const normalizedName = (recipe.name || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, " ");
-
-    const normalizedIngredients = (recipe.ingredients || [])
-      .map((ingredient) => normalizeIngredientText(ingredient))
-      .filter(Boolean)
-      .sort()
-      .join("||");
-
-    return `${normalizedName}__${normalizedIngredients}`;
-  };
-
-  const existingKeys = new Set(
-    recipes
-      .map((recipe) => normalizeRecipe(recipe))
-      .map((recipe) => buildDuplicateKey(recipe))
-      .filter((key) => key !== "__")
-  );
-
-  let skippedCount = 0;
-  let invalidCount = 0;
-
-  const normalizedImported = importedRecipes
-    .map((recipe) => normalizeRecipe(recipe))
-    .filter((recipe) => {
-      const hasName = recipe.name && recipe.name.trim();
-      const hasIngredients = Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0;
-
-      if (!hasName || !hasIngredients) {
-        invalidCount += 1;
-        return false;
-      }
-
-      const key = buildDuplicateKey(recipe);
-      if (existingKeys.has(key)) {
-        skippedCount += 1;
-        return false;
-      }
-
-      existingKeys.add(key);
-      return true;
-    })
-    .map((recipe) => ({
-      ...recipe,
-      id:
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    setSelectedExportRecipeIds((current) => ({
+      ...current,
+      [recipeId]: !current[recipeId],
     }));
+  };
 
-  if (normalizedImported.length === 0) {
-    throw new Error(
-      `No new recipes were imported. ${skippedCount} duplicate${skippedCount === 1 ? "" : "s"} skipped` +
-      `${invalidCount ? `, ${invalidCount} invalid` : ""}.`
-    );
-  }
+  const downloadRecipesFile = (recipesToExport, filename = "recipes-export.json") => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      version: 1,
+      recipes: recipesToExport,
+    };
 
-  setRecipes((current) => [...current, ...normalizedImported]);
-
-  setRecipeServings((current) => {
-    const next = { ...current };
-    normalizedImported.forEach((recipe) => {
-      next[recipe.id] = 1;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
     });
-    return next;
-  });
 
-  setRecipeImportSummary(
-    `Imported ${normalizedImported.length} recipe${normalizedImported.length === 1 ? "" : "s"}. ` +
-    `Skipped ${skippedCount} duplicate${skippedCount === 1 ? "" : "s"}` +
-    `${invalidCount ? ` and ${invalidCount} invalid entr${invalidCount === 1 ? "y" : "ies"}` : ""}.`
-  );
-};
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
+  const exportAllRecipes = () => {
+    downloadRecipesFile(recipes, "all-recipes.json");
+  };
+
+  const exportSelectedRecipes = () => {
+    const selectedRecipes = recipes.filter((recipe) => selectedExportRecipeIds[recipe.id]);
+    if (selectedRecipes.length === 0) return;
+    downloadRecipesFile(selectedRecipes, "selected-recipes.json");
+  };
+
+  const importRecipesFromFile = async (file) => {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+
+    const importedRecipes = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed.recipes)
+        ? parsed.recipes
+        : [];
+
+    if (importedRecipes.length === 0) {
+      throw new Error("No recipes found in that file.");
+    }
+
+    const normalizeIngredientText = (ingredient) => {
+      const ingredientText = typeof ingredient === "string" ? ingredient : ingredient?.text || "";
+      return ingredientText.trim().toLowerCase().replace(/\s+/g, " ");
+    };
+
+    const buildDuplicateKey = (recipe) => {
+      const normalizedName = (recipe.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+      const normalizedIngredients = (recipe.ingredients || [])
+        .map((ingredient) => normalizeIngredientText(ingredient))
+        .filter(Boolean)
+        .sort()
+        .join("||");
+
+      return `${normalizedName}__${normalizedIngredients}`;
+    };
+
+    const existingKeys = new Set(
+      recipes
+        .map((recipe) => normalizeRecipe(recipe))
+        .map((recipe) => buildDuplicateKey(recipe))
+        .filter((key) => key !== "__")
+    );
+
+    let skippedCount = 0;
+    let invalidCount = 0;
+
+    const normalizedImported = importedRecipes
+      .map((recipe) => normalizeRecipe(recipe))
+      .filter((recipe) => {
+        const hasName = recipe.name && recipe.name.trim();
+        const hasIngredients = Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0;
+
+        if (!hasName || !hasIngredients) {
+          invalidCount += 1;
+          return false;
+        }
+
+        const key = buildDuplicateKey(recipe);
+        if (existingKeys.has(key)) {
+          skippedCount += 1;
+          return false;
+        }
+
+        existingKeys.add(key);
+        return true;
+      })
+      .map((recipe) => ({
+        ...recipe,
+        id:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      }));
+
+    if (normalizedImported.length === 0) {
+      throw new Error(
+        `No new recipes were imported. ${skippedCount} duplicate${
+          skippedCount === 1 ? "" : "s"
+        } skipped${invalidCount ? `, ${invalidCount} invalid` : ""}.`
+      );
+    }
+
+    setRecipes((current) => [...current, ...normalizedImported]);
+
+    setRecipeServings((current) => {
+      const next = { ...current };
+      normalizedImported.forEach((recipe) => {
+        next[recipe.id] = 1;
+      });
+      return next;
+    });
+
+    setRecipeImportSummary(
+      `Imported ${normalizedImported.length} recipe${
+        normalizedImported.length === 1 ? "" : "s"
+      }. Skipped ${skippedCount} duplicate${skippedCount === 1 ? "" : "s"}${
+        invalidCount ? ` and ${invalidCount} invalid entr${invalidCount === 1 ? "y" : "ies"}` : ""
+      }.`
+    );
+  };
 
   const rerollPlan = () => {
     setWeeklyPlan(toSevenDayPlan(generatePlan(recipes, mealCount, maxWeeklyTime), mealCount));
@@ -1836,8 +1996,9 @@ const importRecipesFromFile = async (file) => {
   const rerollSingleDay = () => {
     setWeeklyPlan((current) => {
       const currentPlan = Array.isArray(current)
-          ? DAYS.map((_, i) => current[i] || null)
-          : DAYS.map(() => null);
+        ? DAYS.map((_, index) => current[index] || null)
+        : DAYS.map(() => null);
+
       const excludedIds = currentPlan
         .map((recipe, index) => (index !== regenDayIndex && recipe ? recipe.id : null))
         .filter(Boolean);
@@ -1878,10 +2039,11 @@ const importRecipesFromFile = async (file) => {
     }
 
     setWeeklyPlan((current) => {
-      const updated = [...current];
+      const updated = DAYS.map((_, index) => current[index] || null);
       const sourceRecipe = updated[draggedMealIndex] || null;
       const targetRecipe = updated[targetIndex] || null;
       if (!sourceRecipe) return updated;
+
       updated[targetIndex] = sourceRecipe;
       updated[draggedMealIndex] = targetRecipe;
       return updated.map((recipe) => recipe ?? null);
@@ -1894,7 +2056,7 @@ const importRecipesFromFile = async (file) => {
     { id: "planner", label: "Planner", icon: BookOpen },
     { id: "add", label: "New Recipe", icon: Plus },
     { id: "recipes", label: "Saved Recipes", icon: ListChecks },
-    { id: "settings", label: "Settings", icon: Settings2 }
+    { id: "settings", label: "Settings", icon: Settings2 },
   ];
 
   return (
@@ -1926,6 +2088,7 @@ const importRecipesFromFile = async (file) => {
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
+
                 return (
                   <button
                     key={tab.id}
@@ -1946,7 +2109,8 @@ const importRecipesFromFile = async (file) => {
 
         {!hasSupabaseConfig && (
           <div className="notice">
-            Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to enable Google login and cloud sync.
+            Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to enable
+            Google login and cloud sync.
           </div>
         )}
 
@@ -1969,7 +2133,7 @@ const importRecipesFromFile = async (file) => {
                       max="7"
                       step="1"
                       value={mealCount}
-                      onChange={(e) => setMealCount(Number(e.target.value))}
+                      onChange={(event) => setMealCount(Number(event.target.value))}
                     />
                   </div>
 
@@ -1985,7 +2149,7 @@ const importRecipesFromFile = async (file) => {
                       max="600"
                       step="15"
                       value={maxWeeklyTime}
-                      onChange={(e) => setMaxWeeklyTime(Number(e.target.value))}
+                      onChange={(event) => setMaxWeeklyTime(Number(event.target.value))}
                     />
                   </div>
 
@@ -1999,7 +2163,7 @@ const importRecipesFromFile = async (file) => {
                     <select
                       className={`${inputClass()} mt-12`}
                       value={regenDayIndex}
-                      onChange={(e) => setRegenDayIndex(Number(e.target.value))}
+                      onChange={(event) => setRegenDayIndex(Number(event.target.value))}
                     >
                       {DAYS.map((day, index) => (
                         <option key={day} value={index}>
@@ -2022,21 +2186,26 @@ const importRecipesFromFile = async (file) => {
                     <input
                       className={inputClass()}
                       value={newRecipe.name}
-                      onChange={(e) => setNewRecipe((c) => ({ ...c, name: e.target.value }))}
+                      onChange={(event) =>
+                        setNewRecipe((current) => ({ ...current, name: event.target.value }))
+                      }
                     />
                   </div>
                   <div>
-                    <LabelBox>Rarity (1–5)</LabelBox>
+                    <LabelBox>Rarity (1-5)</LabelBox>
                     <input
                       className={inputClass()}
                       type="number"
                       min="1"
                       max="5"
                       value={newRecipe.rarity}
-                      onChange={(e) =>
-                        setNewRecipe((c) => ({
-                          ...c,
-                          rarity: e.target.value === "" ? "" : Math.max(1, Math.min(5, Number(e.target.value) || 1))
+                      onChange={(event) =>
+                        setNewRecipe((current) => ({
+                          ...current,
+                          rarity:
+                            event.target.value === ""
+                              ? ""
+                              : Math.max(1, Math.min(5, Number(event.target.value) || 1)),
                         }))
                       }
                     />
@@ -2048,20 +2217,32 @@ const importRecipesFromFile = async (file) => {
                       type="number"
                       min="1"
                       value={newRecipe.time}
-                      onChange={(e) =>
-                        setNewRecipe((c) => ({
-                          ...c,
-                          time: e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1)
+                      onChange={(event) =>
+                        setNewRecipe((current) => ({
+                          ...current,
+                          time:
+                            event.target.value === ""
+                              ? ""
+                              : Math.max(1, Number(event.target.value) || 1),
                         }))
                       }
                     />
                   </div>
                 </div>
 
-                <div className={`import-status ${importStatus.includes("failed") ? "error" : "success"}`}>
-                  {importStatus}
-                </div>
-
+                {importStatus ? (
+                  <div
+                    className={`import-status mt-10 ${
+                      importStatus.toLowerCase().includes("failed") ||
+                      importStatus.toLowerCase().includes("error") ||
+                      importStatus.toLowerCase().includes("sign in")
+                        ? "error"
+                        : "success"
+                    }`}
+                  >
+                    {importStatus}
+                  </div>
+                ) : null}
 
                 <div className="mt-16">
                   <LabelBox>Import from recipe URL</LabelBox>
@@ -2070,7 +2251,7 @@ const importRecipesFromFile = async (file) => {
                       className={inputClass()}
                       type="url"
                       value={importUrl}
-                      onChange={(e) => setImportUrl(e.target.value)}
+                      onChange={(event) => setImportUrl(event.target.value)}
                       placeholder="https://example.com/recipe"
                     />
                     <button
@@ -2081,7 +2262,6 @@ const importRecipesFromFile = async (file) => {
                       <Link2 size={16} /> {isImportingRecipe ? "Importing..." : "Import URL"}
                     </button>
                   </div>
-                  {importStatus ? <div className="muted mt-10">{importStatus}</div> : null}
                 </div>
 
                 <div className="mt-16">
@@ -2092,17 +2272,16 @@ const importRecipesFromFile = async (file) => {
                       type="file"
                       accept="image/*"
                       className="hidden-file-input"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
                         if (!file) return;
                         await importRecipeFromImage(file);
-                        e.target.value = "";
+                        event.target.value = "";
                       }}
                       disabled={isImportingRecipeImage}
                     />
                   </label>
                 </div>
-
 
                 <div className="mt-16">
                   <LabelBox>Meal image</LabelBox>
@@ -2117,20 +2296,24 @@ const importRecipesFromFile = async (file) => {
                     className={inputClass()}
                     type="file"
                     accept="image/*"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
                       if (!file) return;
 
                       const compressedFile = await compressImageFile(file);
                       const previewUrl = URL.createObjectURL(compressedFile);
 
+                      if (newRecipe.imageUrl?.startsWith("blob:")) {
+                        URL.revokeObjectURL(newRecipe.imageUrl);
+                      }
+
                       setNewRecipe((current) => ({
                         ...current,
                         imageUrl: previewUrl,
-                        pendingImageFile: compressedFile
+                        pendingImageFile: compressedFile,
                       }));
 
-                      e.target.value = "";
+                      event.target.value = "";
                     }}
                   />
                 </div>
@@ -2141,7 +2324,12 @@ const importRecipesFromFile = async (file) => {
                     <textarea
                       className={textareaClass()}
                       value={newRecipe.ingredientsText}
-                      onChange={(e) => setNewRecipe((c) => ({ ...c, ingredientsText: e.target.value }))}
+                      onChange={(event) =>
+                        setNewRecipe((current) => ({
+                          ...current,
+                          ingredientsText: event.target.value,
+                        }))
+                      }
                     />
                   </div>
                   <div>
@@ -2159,19 +2347,22 @@ const importRecipesFromFile = async (file) => {
                             <select
                               className={inputClass()}
                               value={tagLines[index] || ""}
-                              onChange={(e) => {
-                                const updated = newRecipe.ingredientsText.split("\n").map((_, i) =>
-                                  i === index ? e.target.value : tagLines[i] || ""
-                                );
-                                setNewRecipe((c) => ({
-                                  ...c,
-                                  ingredientTagsText: updated.join("\n")
+                              onChange={(event) => {
+                                const updated = newRecipe.ingredientsText
+                                  .split("\n")
+                                  .map((_, i) => (i === index ? event.target.value : tagLines[i] || ""));
+
+                                setNewRecipe((current) => ({
+                                  ...current,
+                                  ingredientTagsText: updated.join("\n"),
                                 }));
                               }}
                             >
                               <option value="">Select</option>
-                              {STORE_LOCATION_OPTIONS.map((opt) => (
-                                <option key={opt} value={opt}>{opt}</option>
+                              {STORE_LOCATION_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
                               ))}
                             </select>
                           </div>
@@ -2184,7 +2375,12 @@ const importRecipesFromFile = async (file) => {
                     <textarea
                       className={textareaClass()}
                       value={newRecipe.stepsText}
-                      onChange={(e) => setNewRecipe((c) => ({ ...c, stepsText: e.target.value }))}
+                      onChange={(event) =>
+                        setNewRecipe((current) => ({
+                          ...current,
+                          stepsText: event.target.value,
+                        }))
+                      }
                     />
                   </div>
                 </div>
@@ -2215,8 +2411,8 @@ const importRecipesFromFile = async (file) => {
                       type="file"
                       accept="application/json"
                       className="hidden-file-input"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
                         if (!file) return;
 
                         setRecipeImportSummary("");
@@ -2229,15 +2425,16 @@ const importRecipesFromFile = async (file) => {
                           );
                         }
 
-                        e.target.value = "";
+                        event.target.value = "";
                       }}
                     />
                   </label>
 
                   {recipeImportSummary ? (
-                      <div className="recipe-import-summary">{recipeImportSummary}</div>
-                    ) : null}
+                    <div className="recipe-import-summary">{recipeImportSummary}</div>
+                  ) : null}
                 </div>
+
                 <div className="stack-12 mt-16">
                   {recipes.length === 0 ? (
                     <div className="notice">No recipes yet.</div>
@@ -2279,7 +2476,9 @@ const importRecipesFromFile = async (file) => {
                 </div>
                 <div className="surface">
                   <div className="muted smallcaps">Time cap</div>
-                  <div className="stat-number">{maxWeeklyTime === 0 ? "Off" : `${maxWeeklyTime} min`}</div>
+                  <div className="stat-number">
+                    {maxWeeklyTime === 0 ? "Off" : `${maxWeeklyTime} min`}
+                  </div>
                 </div>
                 <div className="surface">
                   <div className="muted smallcaps">Recipes</div>
@@ -2305,8 +2504,8 @@ const importRecipesFromFile = async (file) => {
                         <button
                           type="button"
                           className="day-reroll-button"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={(event) => {
+                            event.stopPropagation();
 
                             setWeeklyPlan((current) => {
                               const currentPlan = Array.isArray(current)
@@ -2315,20 +2514,30 @@ const importRecipesFromFile = async (file) => {
 
                               const excludedIds = currentPlan
                                 .map((scheduledRecipe, scheduledIndex) =>
-                                  scheduledIndex !== index && scheduledRecipe ? scheduledRecipe.id : null
+                                  scheduledIndex !== index && scheduledRecipe
+                                    ? scheduledRecipe.id
+                                    : null
                                 )
                                 .filter(Boolean);
 
                               const usedTimeWithoutDay = currentPlan.reduce(
                                 (sum, scheduledRecipe, scheduledIndex) =>
-                                  scheduledIndex === index ? sum : sum + (scheduledRecipe?.time || 0),
+                                  scheduledIndex === index
+                                    ? sum
+                                    : sum + (scheduledRecipe?.time || 0),
                                 0
                               );
 
                               const remainingTime =
-                                maxWeeklyTime > 0 ? Math.max(0, maxWeeklyTime - usedTimeWithoutDay) : 0;
+                                maxWeeklyTime > 0
+                                  ? Math.max(0, maxWeeklyTime - usedTimeWithoutDay)
+                                  : 0;
 
-                              const replacement = pickSingleRecipe(recipes, excludedIds, remainingTime);
+                              const replacement = pickSingleRecipe(
+                                recipes,
+                                excludedIds,
+                                remainingTime
+                              );
                               if (!replacement) return currentPlan;
 
                               const updated = [...currentPlan];
@@ -2360,13 +2569,17 @@ const importRecipesFromFile = async (file) => {
                               className="meal-open-button"
                               onClick={() => setSelectedMeal({ recipe, day })}
                             >
-                              <div className="icon-box"><UtensilsCrossed size={16} /></div>
+                              <div className="icon-box">
+                                <UtensilsCrossed size={16} />
+                              </div>
                               <div className="meal-copy">
                                 <div className="title-sm">{recipe.name}</div>
                                 <div className="muted mt-6">Rarity {recipe.rarity}</div>
                               </div>
                             </button>
-                            <div className="muted drag-handle"><GripVertical size={16} /></div>
+                            <div className="muted drag-handle">
+                              <GripVertical size={16} />
+                            </div>
                           </div>
 
                           <div className="surface row gap-8 muted">
@@ -2375,7 +2588,9 @@ const importRecipesFromFile = async (file) => {
                           </div>
                         </div>
                       ) : (
-                        <div className="empty-slot mt-16">Drop a recipe here or regenerate this day.</div>
+                        <div className="empty-slot mt-16">
+                          Drop a recipe here or regenerate this day.
+                        </div>
                       )}
                     </div>
                   );
@@ -2387,27 +2602,20 @@ const importRecipesFromFile = async (file) => {
       </div>
 
       <MealDetailModal
-  recipe={selectedMeal?.recipe}
-  day={selectedMeal?.day}
-  onClose={() => setSelectedMeal(null)}
-  servings={getRecipeServings(selectedMeal?.recipe)}
-  checkedIngredients={getCheckedIngredients(
-  selectedMeal?.recipe,
-  selectedMeal?.day
-)}
-onToggleIngredient={(index) => {
-  if (!selectedMeal?.recipe?.id || !selectedMeal?.day) return;
-  toggleIngredientChecked(
-    selectedMeal.recipe,
-    selectedMeal.day,
-    index
-  );
-}}
-  onServingsChange={(value) => {
-    if (!selectedMeal?.recipe?.id) return;
-    updateRecipeServings(selectedMeal.recipe.id, value);
-  }}
-/>
+        recipe={selectedMeal?.recipe}
+        day={selectedMeal?.day}
+        onClose={() => setSelectedMeal(null)}
+        servings={getRecipeServings(selectedMeal?.recipe)}
+        checkedIngredients={getCheckedIngredients(selectedMeal?.recipe, selectedMeal?.day)}
+        onToggleIngredient={(index) => {
+          if (!selectedMeal?.recipe?.id || !selectedMeal?.day) return;
+          toggleIngredientChecked(selectedMeal.recipe, selectedMeal.day, index);
+        }}
+        onServingsChange={(value) => {
+          if (!selectedMeal?.recipe?.id) return;
+          updateRecipeServings(selectedMeal.recipe.id, value);
+        }}
+      />
 
       <GroceryListModal
         items={showGroceryList ? groceryListItems : null}
