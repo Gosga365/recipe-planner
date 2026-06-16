@@ -597,3 +597,27 @@ input[type="file"] {
   text-decoration: line-through;
   color: #94a3b8;
 }
+
+/* day clear button */
+.day-clear-button {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.day-clear-button:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.day-clear-button:active {
+  transform: scale(0.94);
+}
