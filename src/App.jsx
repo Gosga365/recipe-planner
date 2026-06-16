@@ -455,6 +455,7 @@ function localFallbackState() {
     weeklyPlan: toSevenDayPlan(generatePlan(starterRecipes, 5, 240), 5),
     recipeServings: {},
     ingredientChecks: {},
+    groceryChecks: {},
   };
 }
 
@@ -489,6 +490,11 @@ function loadInitialState() {
         ? parsed.ingredientChecks
         : {};
 
+    const groceryChecks =
+      parsed.groceryChecks && typeof parsed.groceryChecks === "object"
+        ? parsed.groceryChecks
+        : {};
+
     return {
       recipes,
       mealCount,
@@ -496,6 +502,7 @@ function loadInitialState() {
       weeklyPlan,
       recipeServings,
       ingredientChecks,
+      groceryChecks,
     };
   } catch {
     return localFallbackState();
@@ -1147,7 +1154,7 @@ function RecipeEditorRow({
   );
 }
 
-function GroceryListModal({ items, onClose }) {
+function GroceryListModal({ items, checkedItems = {}, onToggleItem, onClose }) {
   if (!items) return null;
 
   const groupedByTag = items.reduce((acc, item) => {
@@ -1181,9 +1188,25 @@ function GroceryListModal({ items, onClose }) {
               >
                 <h3 className="title-md">{tag}</h3>
                 <ul className="list mt-10">
-                  {texts.map((text, index) => (
-                    <li key={`${tag}-${index}`}>{text}</li>
-                  ))}
+                  {texts.map((text, index) => {
+                    const checkKey = `${tag || "Other"}__${text}`;
+                    const isChecked = Boolean(checkedItems[checkKey]);
+
+                    return (
+                      <li key={`${tag}-${index}`}>
+                        <label className="grocery-check-label">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => onToggleItem?.(text, tag)}
+                          />
+                          <span className={isChecked ? "grocery-item-checked" : ""}>
+                            {text}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))
@@ -1338,6 +1361,7 @@ export default function App() {
     weeklyPlan: initialState.weeklyPlan,
     recipeServings: initialState.recipeServings,
     ingredientChecks: initialState.ingredientChecks,
+    groceryChecks: initialState.groceryChecks || {},
   });
 
   const [recipes, setRecipes] = useState(initialState.recipes);
@@ -1354,6 +1378,7 @@ export default function App() {
   const [isImportingRecipeImage, setIsImportingRecipeImage] = useState(false);
   const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
   const [ingredientChecks, setIngredientChecks] = useState(initialState.ingredientChecks || {});
+  const [groceryChecks, setGroceryChecks] = useState(initialState.groceryChecks || {});
   const [recipeImportSummary, setRecipeImportSummary] = useState("");
   const [selectedExportRecipeIds, setSelectedExportRecipeIds] = useState({});
   const [importUrl, setImportUrl] = useState("");
@@ -1379,6 +1404,7 @@ export default function App() {
           weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
           recipeServings,
           ingredientChecks,
+          groceryChecks,
         }
       : {
           recipes,
@@ -1387,6 +1413,7 @@ export default function App() {
           weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
           recipeServings,
           ingredientChecks,
+          groceryChecks,
         };
 
     try {
@@ -1433,7 +1460,7 @@ export default function App() {
     async function loadCloudData() {
       const { data, error } = await supabase
         .from("user_recipe_plans")
-        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
+        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks, grocery_checks")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -1472,6 +1499,13 @@ export default function App() {
             : {}),
         };
 
+        const mergedGroceryChecks = {
+          ...(groceryChecks || {}),
+          ...(data.grocery_checks && typeof data.grocery_checks === "object"
+            ? data.grocery_checks
+            : {}),
+        };
+
         const nextMealCount = Number(data.meal_count) || mealCount || 5;
         const nextMaxWeeklyTime = Number.isFinite(data.max_weekly_time)
           ? data.max_weekly_time
@@ -1482,6 +1516,7 @@ export default function App() {
           weeklyPlan: mergedWeeklyPlan,
           recipeServings: mergedRecipeServings,
           ingredientChecks: mergedIngredientChecks,
+          groceryChecks: mergedGroceryChecks,
         };
 
         setRecipes(mergedRecipes);
@@ -1496,6 +1531,7 @@ export default function App() {
           weeklyPlan,
           recipeServings,
           ingredientChecks,
+          groceryChecks,
         };
       }
 
@@ -1517,7 +1553,7 @@ export default function App() {
     const timeout = setTimeout(async () => {
       const { data } = await supabase
         .from("user_recipe_plans")
-        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
+        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks, grocery_checks")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -1537,6 +1573,9 @@ export default function App() {
         JSON.stringify(recipeServings || {}) !== JSON.stringify(cloudSnapshot.recipeServings || {});
       const localChecksChanged =
         JSON.stringify(ingredientChecks || {}) !== JSON.stringify(cloudSnapshot.ingredientChecks || {});
+
+      const localGroceryChecksChanged =
+        JSON.stringify(groceryChecks || {}) !== JSON.stringify(cloudSnapshot.groceryChecks || {});
 
       const mergedRecipes = mergeRecipesPreserveAll(recipes, currentCloudRecipes);
 
@@ -1565,6 +1604,16 @@ export default function App() {
             ...(data?.ingredient_checks || {}),
           };
 
+      const mergedGroceryChecks = localGroceryChecksChanged
+        ? {
+            ...(data?.grocery_checks || {}),
+            ...groceryChecks,
+          }
+        : {
+            ...groceryChecks,
+            ...(data?.grocery_checks || {}),
+          };
+
       await supabase.from("user_recipe_plans").upsert(
         {
           user_id: user.id,
@@ -1574,6 +1623,7 @@ export default function App() {
           weekly_plan: preserveSevenDayPlan(mergedWeeklyPlan),
           recipe_servings: mergedRecipeServings,
           ingredient_checks: mergedIngredientChecks,
+          grocery_checks: mergedGroceryChecks,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" }
@@ -1584,6 +1634,7 @@ export default function App() {
         weeklyPlan: mergedWeeklyPlan,
         recipeServings: mergedRecipeServings,
         ingredientChecks: mergedIngredientChecks,
+        groceryChecks: mergedGroceryChecks,
       };
     }, 700);
 
@@ -1595,6 +1646,7 @@ export default function App() {
     weeklyPlan,
     recipeServings,
     ingredientChecks,
+    groceryChecks,
     user?.id,
     hasLoadedCloudData,
   ]);
@@ -1645,6 +1697,15 @@ export default function App() {
         ...(current[key] || {}),
         [index]: !(current[key] || {})[index],
       },
+    }));
+  };
+
+  const toggleGroceryCheck = (text, locationTag) => {
+    const key = `${locationTag || "Other"}__${text}`;
+
+    setGroceryChecks((current) => ({
+      ...current,
+      [key]: !current[key],
     }));
   };
 
@@ -2619,6 +2680,8 @@ export default function App() {
 
       <GroceryListModal
         items={showGroceryList ? groceryListItems : null}
+        checkedItems={groceryChecks}
+        onToggleItem={toggleGroceryCheck}
         onClose={() => setShowGroceryList(false)}
       />
     </div>
