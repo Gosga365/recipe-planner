@@ -1403,24 +1403,15 @@ export default function App() {
   });
 
   useEffect(() => {
-    const localPayload = user
-      ? {
-          mealCount,
-          maxWeeklyTime,
-          weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
-          recipeServings,
-          ingredientChecks,
-          groceryChecks,
-        }
-      : {
-          recipes,
-          mealCount,
-          maxWeeklyTime,
-          weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
-          recipeServings,
-          ingredientChecks,
-          groceryChecks,
-        };
+    const localPayload = {
+      recipes,
+      mealCount,
+      maxWeeklyTime,
+      weeklyPlanIds: weeklyPlanToIdPlan(weeklyPlan),
+      recipeServings,
+      ingredientChecks,
+      groceryChecks,
+    };
 
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localPayload));
@@ -1471,7 +1462,7 @@ export default function App() {
     async function loadCloudData() {
       const { data, error } = await supabase
         .from("user_recipe_plans")
-        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks, grocery_checks")
+        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -1512,12 +1503,7 @@ export default function App() {
             : {}),
         };
 
-        const mergedGroceryChecks = {
-          ...(groceryChecks || {}),
-          ...(data.grocery_checks && typeof data.grocery_checks === "object"
-            ? data.grocery_checks
-            : {}),
-        };
+        const mergedGroceryChecks = groceryChecks || {};
 
         const nextMealCount = Number(data.meal_count) || mealCount || 5;
         const nextMaxWeeklyTime = Number.isFinite(data.max_weekly_time)
@@ -1576,7 +1562,7 @@ export default function App() {
     const timeout = setTimeout(async () => {
       const { data } = await supabase
         .from("user_recipe_plans")
-        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks, grocery_checks")
+        .select("recipes, meal_count, max_weekly_time, weekly_plan, recipe_servings, ingredient_checks")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -1627,17 +1613,9 @@ export default function App() {
             ...(data?.ingredient_checks || {}),
           };
 
-      const mergedGroceryChecks = localGroceryChecksChanged
-        ? {
-            ...(data?.grocery_checks || {}),
-            ...groceryChecks,
-          }
-        : {
-            ...groceryChecks,
-            ...(data?.grocery_checks || {}),
-          };
+      const mergedGroceryChecks = groceryChecks || {};
 
-      await supabase.from("user_recipe_plans").upsert(
+      const { error: saveError } = await supabase.from("user_recipe_plans").upsert(
         {
           user_id: user.id,
           recipes: mergedRecipes,
@@ -1646,11 +1624,15 @@ export default function App() {
           weekly_plan: preserveSevenDayPlan(mergedWeeklyPlan),
           recipe_servings: mergedRecipeServings,
           ingredient_checks: mergedIngredientChecks,
-          grocery_checks: mergedGroceryChecks,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" }
       );
+
+      if (saveError) {
+        console.error("Failed to save cloud recipe data.", saveError);
+        return;
+      }
 
       cloudLoadRef.current = {
         recipes: mergedRecipes,
