@@ -1363,6 +1363,12 @@ export default function App() {
     ingredientChecks: initialState.ingredientChecks,
     groceryChecks: initialState.groceryChecks || {},
   });
+  const hasUserMadeChangesRef = useRef(false);
+  const hasSuccessfullyReadCloudRef = useRef(false);
+
+  const markUserChanged = () => {
+    hasUserMadeChangesRef.current = true;
+  };
 
   const [recipes, setRecipes] = useState(initialState.recipes);
   const [mealCount, setMealCount] = useState(initialState.mealCount);
@@ -1441,6 +1447,8 @@ export default function App() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setHasLoadedCloudData(false);
+      hasSuccessfullyReadCloudRef.current = false;
+      hasUserMadeChangesRef.current = false;
     });
 
     return () => {
@@ -1452,8 +1460,11 @@ export default function App() {
   useEffect(() => {
     if (!supabase || !user) {
       setHasLoadedCloudData(false);
+      hasSuccessfullyReadCloudRef.current = false;
       return;
     }
+
+    hasSuccessfullyReadCloudRef.current = false;
 
     let cancelled = false;
 
@@ -1467,7 +1478,9 @@ export default function App() {
       if (cancelled) return;
 
       if (error) {
-        setHasLoadedCloudData(true);
+        console.error("Failed to load cloud recipe data.", error);
+        setHasLoadedCloudData(false);
+        hasSuccessfullyReadCloudRef.current = false;
         return;
       }
 
@@ -1535,6 +1548,8 @@ export default function App() {
         };
       }
 
+      hasSuccessfullyReadCloudRef.current = true;
+      hasUserMadeChangesRef.current = false;
       setHasLoadedCloudData(true);
     }
 
@@ -1548,7 +1563,15 @@ export default function App() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (!supabase || !user || !hasLoadedCloudData) return;
+    if (
+      !supabase ||
+      !user ||
+      !hasLoadedCloudData ||
+      !hasSuccessfullyReadCloudRef.current ||
+      !hasUserMadeChangesRef.current
+    ) {
+      return;
+    }
 
     const timeout = setTimeout(async () => {
       const { data } = await supabase
@@ -1636,6 +1659,7 @@ export default function App() {
         ingredientChecks: mergedIngredientChecks,
         groceryChecks: mergedGroceryChecks,
       };
+      hasUserMadeChangesRef.current = false;
     }, 700);
 
     return () => clearTimeout(timeout);
@@ -1691,6 +1715,7 @@ export default function App() {
     const key = getIngredientCheckKey(recipe, day);
     if (!key) return;
 
+    markUserChanged();
     setIngredientChecks((current) => ({
       ...current,
       [key]: {
@@ -1703,6 +1728,7 @@ export default function App() {
   const toggleGroceryCheck = (text, locationTag) => {
     const key = `${locationTag || "Other"}__${text}`;
 
+    markUserChanged();
     setGroceryChecks((current) => ({
       ...current,
       [key]: !current[key],
@@ -1721,6 +1747,7 @@ export default function App() {
   );
 
   const updateRecipeServings = (recipeId, nextServings) => {
+    markUserChanged();
     setRecipeServings((current) => ({
       ...current,
       [recipeId]: nextServings,
@@ -1862,6 +1889,8 @@ export default function App() {
         finalImageUrl = uploaded.imageUrl;
       }
 
+      markUserChanged();
+
       setRecipes((current) => [
         ...current,
         {
@@ -1899,6 +1928,7 @@ export default function App() {
   };
 
   const saveRecipe = (updatedRecipe) => {
+    markUserChanged();
     setRecipes((current) =>
       current.map((recipe) => (recipe.id === updatedRecipe.id ? updatedRecipe : recipe))
     );
@@ -1908,6 +1938,7 @@ export default function App() {
   };
 
   const removeRecipe = (id) => {
+    markUserChanged();
     setRecipes((current) => current.filter((recipe) => recipe.id !== id));
     setWeeklyPlan((current) => current.map((recipe) => (recipe?.id === id ? null : recipe)));
     setRecipeServings((current) => {
@@ -2031,6 +2062,7 @@ export default function App() {
       );
     }
 
+    markUserChanged();
     setRecipes((current) => [...current, ...normalizedImported]);
 
     setRecipeServings((current) => {
@@ -2051,10 +2083,12 @@ export default function App() {
   };
 
   const rerollPlan = () => {
+    markUserChanged();
     setWeeklyPlan(toSevenDayPlan(generatePlan(recipes, mealCount, maxWeeklyTime), mealCount));
   };
 
   const rerollSingleDay = () => {
+    markUserChanged();
     setWeeklyPlan((current) => {
       const currentPlan = Array.isArray(current)
         ? DAYS.map((_, index) => current[index] || null)
@@ -2098,6 +2132,8 @@ export default function App() {
       setDraggedMealIndex(null);
       return;
     }
+
+    markUserChanged();
 
     setWeeklyPlan((current) => {
       const updated = DAYS.map((_, index) => current[index] || null);
@@ -2194,7 +2230,10 @@ export default function App() {
                       max="7"
                       step="1"
                       value={mealCount}
-                      onChange={(event) => setMealCount(Number(event.target.value))}
+                      onChange={(event) => {
+                        markUserChanged();
+                        setMealCount(Number(event.target.value));
+                      }}
                     />
                   </div>
 
@@ -2210,7 +2249,10 @@ export default function App() {
                       max="600"
                       step="15"
                       value={maxWeeklyTime}
-                      onChange={(event) => setMaxWeeklyTime(Number(event.target.value))}
+                      onChange={(event) => {
+                        markUserChanged();
+                        setMaxWeeklyTime(Number(event.target.value));
+                      }}
                     />
                   </div>
 
@@ -2567,6 +2609,7 @@ export default function App() {
                           className="day-reroll-button"
                           onClick={(event) => {
                             event.stopPropagation();
+                            markUserChanged();
 
                             setWeeklyPlan((current) => {
                               const currentPlan = Array.isArray(current)
