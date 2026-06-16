@@ -577,3 +577,23 @@ input[type="file"] {
   padding: 20px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
 }
+
+/* grocery list check boxes */
+
+.grocery-check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.grocery-check-label input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.grocery-item-checked {
+  text-decoration: line-through;
+  color: #94a3b8;
+}
